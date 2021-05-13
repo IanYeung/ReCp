@@ -5,6 +5,7 @@ from torch.nn import functional as F
 
 from basicsr.utils.registry import ARCH_REGISTRY
 from .arch_util import flow_warp
+from collections import OrderedDict
 
 
 class BasicModule(nn.Module):
@@ -61,11 +62,18 @@ class SpyNet(nn.Module):
     def __init__(self, load_path=None):
         super(SpyNet, self).__init__()
         self.basic_module = nn.ModuleList([BasicModule() for _ in range(6)])
+        # if load_path:
+        #     self.load_state_dict(
+        #         torch.load(
+        #             load_path,
+        #             map_location=lambda storage, loc: storage)['params'])
+
         if load_path:
-            self.load_state_dict(
-                torch.load(
-                    load_path,
-                    map_location=lambda storage, loc: storage)['params'])
+            state_dict = OrderedDict()
+            for k, v in torch.load(load_path).items():
+                k = k.replace('moduleBasic', 'basic_module')
+                state_dict[k] = v
+            self.load_state_dict(state_dict)
 
         self.register_buffer(
             'mean',

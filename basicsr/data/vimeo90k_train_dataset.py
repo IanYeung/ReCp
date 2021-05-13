@@ -9,7 +9,7 @@ from basicsr.utils.registry import DATASET_REGISTRY
 
 
 @DATASET_REGISTRY.register()
-class Vimeo90KSingleFrameDataset(data.Dataset):
+class Vimeo90KTrainDataset(data.Dataset):
     """Vimeo90K dataset for training.
 
     The keys are generated from a meta info txt file.
@@ -24,6 +24,13 @@ class Vimeo90KSingleFrameDataset(data.Dataset):
     Key examples: "00001/0001"
     GT (gt): Ground-Truth;
     LQ (lq): Low-Quality, e.g., low-resolution/blurry/noisy/compressed frames.
+
+    The neighboring frame list for different num_frame:
+    num_frame | frame list
+             1 | 4
+             3 | 3,4,5
+             5 | 2,3,4,5,6
+             7 | 1,2,3,4,5,6,7
 
     Args:
         opt (dict): Config for train dataset. It contains the following keys:
@@ -43,9 +50,10 @@ class Vimeo90KSingleFrameDataset(data.Dataset):
     """
 
     def __init__(self, opt):
-        super(Vimeo90KSingleFrameDataset, self).__init__()
+        super(Vimeo90KTrainDataset, self).__init__()
         self.opt = opt
-        self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(opt['dataroot_lq'])
+        self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(
+            opt['dataroot_lq'])
 
         with open(opt['meta_info_file'], 'r') as fin:
             self.keys = [line.split(' ')[0] for line in fin]
@@ -58,6 +66,11 @@ class Vimeo90KSingleFrameDataset(data.Dataset):
             self.is_lmdb = True
             self.io_backend_opt['db_paths'] = [self.lq_root, self.gt_root]
             self.io_backend_opt['client_keys'] = ['lq', 'gt']
+
+        # indices of input images
+        self.neighbor_list = [
+            i + (9 - opt['num_frame']) // 2 for i in range(opt['num_frame'])
+        ]
 
         # temporal augmentation configs
         self.random_reverse = opt['random_reverse']
@@ -86,28 +99,34 @@ class Vimeo90KSingleFrameDataset(data.Dataset):
         img_bytes = self.file_client.get(img_gt_path, 'gt')
         img_gt = imfrombytes(img_bytes, float32=True)
 
-        # get the LQ frame (im4.png)
-        if self.is_lmdb:
-            img_lq_path = f'{key}/im4'
-        else:
-            img_lq_path = self.lq_root / clip / seq / f'im4.png'
-        img_bytes = self.file_client.get(img_lq_path, 'lq')
-        img_lq = imfrombytes(img_bytes, float32=True)
+        # get the neighboring LQ frames
+        img_lqs = []
+        for neighbor in self.neighbor_list:
+            if self.is_lmdb:
+                img_lq_path = f'{clip}/{seq}/im{neighbor}'
+            else:
+                img_lq_path = self.lq_root / clip / seq / f'im{neighbor}.png'
+            img_bytes = self.file_client.get(img_lq_path, 'lq')
+            img_lq = imfrombytes(img_bytes, float32=True)
+            img_lqs.append(img_lq)
 
         # randomly crop
-        img_gt, img_lq = paired_random_crop(img_gt, img_lq, gt_size, scale, img_gt_path)
+        img_gt, img_lqs = paired_random_crop(img_gt, img_lqs, gt_size, scale,
+                                             img_gt_path)
 
         # augmentation - flip, rotate
-        img_results = augment([img_lq, img_gt], self.opt['use_flip'], self.opt['use_rot'])
+        img_lqs.append(img_gt)
+        img_results = augment(img_lqs, self.opt['use_flip'],
+                              self.opt['use_rot'])
 
         img_results = img2tensor(img_results)
-        img_lq = img_results[0]
-        img_gt = img_results[1]
+        img_lqs = torch.stack(img_results[0:-1], dim=0)
+        img_gt = img_results[-1]
 
-        # img_lq: (c, h, w)
+        # img_lqs: (t, c, h, w)
         # img_gt: (c, h, w)
         # key: str
-        return {'lq': img_lq, 'gt': img_gt, 'key': key}
+        return {'lq': img_lqs, 'gt': img_gt, 'key': key}
 
     def __len__(self):
         return len(self.keys)

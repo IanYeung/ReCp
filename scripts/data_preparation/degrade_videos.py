@@ -56,7 +56,7 @@ def decode_frames_with_ffmpeg(video_path, image_path):
         if not in_bytes:
             break
         frame = np.frombuffer(in_bytes, np.uint8).reshape([height, width, 3])
-        cv2.imwrite(osp.join(image_path, '{:05d}.png'.format(k)), frame)
+        cv2.imwrite(osp.join(image_path, 'im{}.png'.format(k)), frame)
 
     process.wait()
     print('total {} frames'.format(k - 1))
@@ -313,21 +313,21 @@ if __name__ == "__main__":
 
     # fixed degradation (Vimeo90K)
     scale = 1
-    qp = 32
+    mode = 'crf'
+    quality = 23
     params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
               'is_noise': False, 'noise_sigma': 5.0,
               'down_type': 'mat_cubic', 'down_scale': scale,
-              'mode': 'qp', 'bitrate': 200, 'crf': 23, 'qp': qp}
+              'mode': mode, 'bitrate': quality, 'crf': quality, 'qp': quality}
 
-    read_root_img = f'/data1/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences'
-    save_root_mp4 = f'/data1/yangxi/datasets/Vimeo90k/vimeo_septuplet_h264_qp{qp}_mp4/sequences'
-    save_root_img = f'/data1/yangxi/datasets/Vimeo90k/vimeo_septuplet_h264_qp{qp}_img/sequences'
+    read_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx4/sequences'
+    save_root_mp4 = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx4_h264_{mode}{quality}_mp4/sequences'
+    save_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx4_h264_{mode}{quality}_img/sequences'
 
     folder_list = [osp.basename(folder) for folder in sorted(glob.glob(osp.join(read_root_img, '*')))]
     for folder in folder_list:
         seq_path_list = sorted(glob.glob(osp.join(read_root_img, folder, '*')))
         mkdir(osp.join(save_root_mp4, folder))
-
         for seq_path in seq_path_list:
             seq_name = osp.basename(seq_path)
             vid.process(seq_path, osp.join(save_root_mp4, folder, '{}.mp4'.format(seq_name)), params=params)
@@ -344,11 +344,11 @@ if __name__ == "__main__":
 
     # # fixed degradation (SPMCS)
     # scale = 2
-    #
+    # qp = 32
     # params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
     #           'is_noise': False, 'noise_sigma': 5.0,
     #           'down_type': 'mat_cubic', 'down_scale': scale,
-    #           'mode': 'crf', 'bitrate': 200, 'crf': 23, 'qp': 23}
+    #           'mode': 'crf', 'bitrate': 200, 'crf': 23, 'qp': qp}
     #
     # root = '/home/xiyang/Datasets/SPMCS'
     #
@@ -358,7 +358,6 @@ if __name__ == "__main__":
     #     print('Processing: {}'.format(seq_name))
     #     read_root_img = osp.join(root, seq_name, 'GT')
     #     save_path_mp4 = osp.join(root, seq_name, '{}.mp4'.format(seq_name))
-    #
     #     vid.process(read_root_img, save_path_mp4, params=params)
     #     print(vid.get_params())
     #
