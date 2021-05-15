@@ -197,7 +197,7 @@ class SingleFrameSRCompressModel(BaseModel):
                 if self.opt['is_train']:
                     save_img_path = osp.join(
                         self.opt['path']['visualization'], dataset_name, clip_name,
-                        f'sr_{img_name}_{current_iter}.png')
+                        f'sr_{img_name}_{current_iter:08d}.png')
                 else:
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(
@@ -212,7 +212,7 @@ class SingleFrameSRCompressModel(BaseModel):
                 if self.opt['is_train']:
                     save_img_path = osp.join(
                         self.opt['path']['visualization'], dataset_name, clip_name,
-                        f'cp_{img_name}_{current_iter}.png')
+                        f'cp_{img_name}_{current_iter:08d}.png')
                 else:
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(

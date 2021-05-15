@@ -128,12 +128,13 @@ class SingleFrameCompressModel(BaseModel):
         pbar = tqdm(total=len(dataloader), unit='image')
 
         for idx, val_data in enumerate(dataloader):
-            img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
+            clip_name = val_data['key'][0].replace('/', '_')
+            img_name = 'im4'
             self.feed_data(val_data)
             self.test()
 
             visuals = self.get_current_visuals()
-            sr_img = tensor2img([visuals['result']])
+            cp_img = tensor2img([visuals['result']])
             if 'gt' in visuals:
                 gt_img = tensor2img([visuals['gt']])
                 del self.gt
@@ -145,36 +146,35 @@ class SingleFrameCompressModel(BaseModel):
 
             if save_img:
                 if self.opt['is_train']:
-                    save_img_path = osp.join(self.opt['path']['visualization'],
-                                             img_name,
-                                             f'{img_name}_{current_iter}.png')
+                    save_img_path = osp.join(
+                        self.opt['path']['visualization'], dataset_name, clip_name,
+                        f'{img_name}_{current_iter:08d}.png')
                 else:
+                    clip_name_part1, clip_name_part2 = clip_name.split('_')
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name,
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
                             f'{img_name}_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name,
-                            f'{img_name}_{self.opt["name"]}.png')
-                imwrite(sr_img, save_img_path)
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
+                            f'{img_name}.png')
+                imwrite(cp_img, save_img_path)
 
             if with_metrics:
                 # calculate metrics
                 for name, opt_ in self.opt['val']['metrics'].items():
-                    metric_data = dict(img1=sr_img, img2=gt_img)
-                    self.metric_results[name] += calculate_metric(
-                        metric_data, opt_)
+                    metric_data = dict(img1=cp_img, img2=gt_img)
+                    self.metric_results[name] += calculate_metric(metric_data, opt_)
             pbar.update(1)
-            pbar.set_description(f'Test {img_name}')
+            pbar.set_description(f'Test {clip_name}')
         pbar.close()
 
         if with_metrics:
             for metric in self.metric_results.keys():
                 self.metric_results[metric] /= (idx + 1)
 
-            self._log_validation_metric_values(current_iter, dataset_name,
-                                               tb_logger)
+            self._log_validation_metric_values(current_iter, dataset_name, tb_logger)
 
     def _log_validation_metric_values(self, current_iter, dataset_name,
                                       tb_logger):
