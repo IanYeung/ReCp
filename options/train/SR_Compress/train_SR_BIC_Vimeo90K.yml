@@ -1,7 +1,7 @@
 # general settings
-name: 001_EncoderDecoder_Vimeo90k_300k_crf28
-model_type: SingleFrameCompressModel
-scale: 1
+name: 001_MSRResNet_BIC_x2_Vimeo90k_250k_crf23
+model_type: SingleFrameSRCompressModel
+scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
 manual_seed: 0
 
@@ -10,8 +10,8 @@ datasets:
   train:
     name: Vimeo90K
     type: Vimeo90KSingleFrameTrainDataset
-    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_com_crf28_img/sequences
-    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_enh/sequences
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
     dataroot_flow: ~
     meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_train_GT.txt
     io_backend:
@@ -31,46 +31,58 @@ datasets:
   val:
     name: Vimeo90K
     type: Vimeo90KSingleFrameValidDataset
-    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_com_crf28_img/sequences
-    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_enh/sequences
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
     dataroot_flow: ~
     meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
     io_backend:
       type: disk
 
 # network structures
-network_g:
-  type: EncoderDecoder
-  depth: 2
+network_sr:
+  type: MSRResNet
+  num_in_ch: 3
+  num_out_ch: 3
+  num_feat: 64
+  num_block: 16
+  upscale: 2
+network_cp:
+  type: BIC
   nf: 64
   num_in_ch: 3
   num_out_ch: 3
 
 # path
 path:
-  pretrain_network_g: ~
-  strict_load_g: false
+  pretrain_network_sr: experiments/001_MSRResNet_x2_f64b16_Vimeo90k_500k_B16G1_wandb/models/net_g_00500000.pth
+  strict_load_sr: true
+  pretrain_network_cp: experiments/001_BIC_Vimeo90k_300k_crf23/models/net_g_latest.pth
+  strict_load_cp: true
   resume_state: ~
 
 # training settings
 train:
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 1e-4
     weight_decay: 0
     betas: [0.9, 0.99]
 
   scheduler:
     type: CosineAnnealingRestartLR
-    periods: [300000]
+    periods: [250000]
     restart_weights: [1]
     eta_min: !!float 1e-7
 
-  total_iter: 300000
+  total_iter: 250000
   warmup_iter: -1  # no warm up
 
   # losses
-  pixel_opt:
+  pixel_opt_sr:
+    type: L1Loss
+    loss_weight: 0.1
+    reduction: mean
+  pixel_opt_cp:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
