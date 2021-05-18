@@ -4,6 +4,12 @@ from torch import nn as nn
 from basicsr.archs.arch_util import ResidualBlockNoBN, make_layer
 from basicsr.utils.registry import ARCH_REGISTRY
 
+from compressai.layers import (
+    AttentionBlock,
+    ResidualBlock, ResidualBlockUpsample, ResidualBlockWithStride,
+    conv3x3, subpel_conv3x3,
+)
+
 
 class SimpleBlock(nn.Module):
 
@@ -45,7 +51,7 @@ class SimpleBlock(nn.Module):
 @ARCH_REGISTRY.register()
 class EncoderDecoder(nn.Module):
 
-    def __init__(self, depth=2, nf=64, num_in_ch=1, num_out_ch=1):
+    def __init__(self, depth=2, nf=64, num_in_ch=3, num_out_ch=3):
         super(EncoderDecoder, self).__init__()
 
         # encoder
@@ -79,5 +85,42 @@ class EncoderDecoder(nn.Module):
         out = self.conv_block_s4(out)    # 128, H/2, W/2
         out = self.up2(out)              # 064, H/1, W/1
         out = self.conv_block_s5(out)    # out, H/1, W/1
+        out += x
 
         return out
+
+
+@ARCH_REGISTRY.register()
+class BIC(nn.Module):
+
+    def __init__(self, nf=64, num_in_ch=3, num_out_ch=3):
+        super(BIC, self).__init__()
+        self.encoder = nn.Sequential(
+            ResidualBlockWithStride(num_in_ch, nf, stride=2),
+            ResidualBlock(nf, nf),
+            ResidualBlockWithStride(nf, nf, stride=2),
+            AttentionBlock(nf),
+            ResidualBlock(nf, nf),
+            ResidualBlockWithStride(nf, nf, stride=2),
+            ResidualBlock(nf, nf),
+            conv3x3(nf, nf, stride=2),
+            AttentionBlock(nf),
+        )
+
+        self.decoder = nn.Sequential(
+            AttentionBlock(nf),
+            ResidualBlock(nf, nf),
+            ResidualBlockUpsample(nf, nf, 2),
+            ResidualBlock(nf, nf),
+            ResidualBlockUpsample(nf, nf, 2),
+            AttentionBlock(nf),
+            ResidualBlock(nf, nf),
+            ResidualBlockUpsample(nf, nf, 2),
+            ResidualBlock(nf, nf),
+            subpel_conv3x3(nf, num_out_ch, 2),
+        )
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
