@@ -22,6 +22,11 @@ def get_time_str():
     return time.strftime('%Y%m%d_%H%M%S', time.localtime())
 
 
+def mkdir(path):
+    if not osp.exists(path):
+        os.makedirs(path)
+
+
 def mkdir_and_rename(path):
     """mkdirs. If path exists, rename it with timestamp and create a new one.
 
