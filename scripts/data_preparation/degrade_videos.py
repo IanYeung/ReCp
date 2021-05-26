@@ -4,6 +4,7 @@ import cv2
 import sys
 import glob
 import time
+import shutil
 import numpy as np
 import subprocess
 import ffmpeg
@@ -25,12 +26,41 @@ def mkdir(path):
         os.makedirs(path)
 
 
-def encode_frames_with_ffmpeg(src_path, dst_path, crf, fps=25, start_number=1, vframes=1000):
-    command = 'ffmpeg -r {} -f image2 -start_number {} -i {} -vframes {} -vcodec libx265 ' \
-              '-vf fps={} -crf {} -pix_fmt yuv420p -an {} -y &>/dev/null'\
-        .format(fps, start_number, src_path, vframes, fps, crf, dst_path)
-    print('doing... ' + command)
-    os.system(command)
+# def encode_frames_with_ffmpeg(src_path, dst_path, crf, fps=25, start_number=1, vframes=1000):
+#     command = 'ffmpeg -r {} -f image2 -start_number {} -i {} -vframes {} -vcodec libx265 ' \
+#               '-vf fps={} -crf {} -pix_fmt yuv420p -an {} -y &>/dev/null'\
+#         .format(fps, start_number, src_path, vframes, fps, crf, dst_path)
+#     print('doing... ' + command)
+#     os.system(command)
+
+
+def encode_frames_with_ffmpeg(src_path, dst_path, mode='crf'):
+    if mode == 'crf':
+        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -crf 23 {}'.format(src_path, dst_path)
+        print(command)
+        os.system(command)
+    elif mode == 'cqp':
+        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -crf 23 {}'.format(src_path, dst_path)
+        print(command)
+        os.system(command)
+    elif mode == 'abr':
+        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -b:v 400k {}'.format(src_path, dst_path)
+        print(command)
+        os.system(command)
+    elif mode == 'vbr':
+        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -b:v 400k -pass 1 -f null /dev/null'.format(src_path)
+        print(command)
+        os.system(command)
+        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -b:v 400k -pass 2 {}'.format(src_path, dst_path)
+        print(command)
+        os.system(command)
+    elif mode == 'cbr':
+        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -x264-params "nal-hrd=cbr:force-cfr=1" ' \
+                  '-b:v 1M -minrate 1M -maxrate 1M -bufsize 2M {}'.format(src_path, dst_path)
+        print(command)
+        os.system(command)
+    else:
+        raise ValueError()
 
 
 def decode_frames_with_ffmpeg(video_path, image_path):
@@ -314,29 +344,40 @@ if __name__ == "__main__":
     # fixed degradation (Vimeo90K)
     scale = 1
     mode = 'crf'
-    quality = 23
+    quality = 33
     params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
               'is_noise': False, 'noise_sigma': 5.0,
               'down_type': 'mat_cubic', 'down_scale': scale,
               'mode': mode, 'bitrate': quality, 'crf': quality, 'qp': quality}
 
-    read_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx4/sequences'
-    save_root_mp4 = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx4_h264_{mode}{quality}_mp4/sequences'
-    save_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx4_h264_{mode}{quality}_img/sequences'
+    # read_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_enh/sequences'
+    # save_root_mp4 = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_com_{mode}{quality}_mp4/sequences'
+    # save_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_com_{mode}{quality}_img/sequences'
+
+    # exp_name = '001_MSRResNet_x2_f64b16_Vimeo90k_250k_B16G1_wandb'
+    # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf23'
+    exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf28'
+    # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf23'
+    # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf28'
+
+    read_root_img = f'/home/xiyang/Datasets/ReCp/results/{exp_name}/visualization/Vimeo90K'
+    save_root_mp4 = f'/home/xiyang/Datasets/ReCp/results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_video'
+    save_root_img = f'/home/xiyang/Datasets/ReCp/results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_frame'
 
     folder_list = [osp.basename(folder) for folder in sorted(glob.glob(osp.join(read_root_img, '*')))]
     for folder in folder_list:
+        # encode
         seq_path_list = sorted(glob.glob(osp.join(read_root_img, folder, '*')))
         mkdir(osp.join(save_root_mp4, folder))
         for seq_path in seq_path_list:
             seq_name = osp.basename(seq_path)
             vid.process(seq_path, osp.join(save_root_mp4, folder, '{}.mp4'.format(seq_name)), params=params)
             print(vid.get_params())
-
+        # decode
         seq_path_list = sorted(glob.glob(osp.join(save_root_mp4, folder, '*')))
         mkdir(osp.join(save_root_img, folder))
         for seq_path in seq_path_list:
-            seq_name = osp.basename(seq_path)[:-4]
+            seq_name = osp.basename(seq_path).split('.')[0]
             print('Processing: {}'.format(seq_name))
             frm_path = osp.join(save_root_img, folder, seq_name)
             mkdir(frm_path)
@@ -354,13 +395,14 @@ if __name__ == "__main__":
     #
     # seq_list = sorted(glob.glob(osp.join(root, '*')))
     # for seq in seq_list:
+    #     # encode
     #     seq_name = osp.basename(seq)
     #     print('Processing: {}'.format(seq_name))
     #     read_root_img = osp.join(root, seq_name, 'GT')
     #     save_path_mp4 = osp.join(root, seq_name, '{}.mp4'.format(seq_name))
     #     vid.process(read_root_img, save_path_mp4, params=params)
     #     print(vid.get_params())
-    #
+    #     # decode
     #     save_root_img = osp.join(root, seq_name, 'BIX{}_compressed_img'.format(scale))
     #     mkdir(save_root_img)
     #     decode_frames_with_ffmpeg(save_path_mp4, save_root_img)
