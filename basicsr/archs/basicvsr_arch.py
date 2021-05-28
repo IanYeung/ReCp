@@ -21,7 +21,7 @@ class BasicVSR(nn.Module):
         spynet_path (str): The path of Pre-trained SPyNet model.
             Default: None.
     """
-    def __init__(self, num_feat=64, num_block=30, spynet_path=None):
+    def __init__(self, num_feat=64, num_block=30, scale=2, spynet_path=None):
         super(BasicVSR, self).__init__()
         self.num_feat = num_feat
         self.num_block = num_block
@@ -37,15 +37,22 @@ class BasicVSR(nn.Module):
         self.concate = nn.Conv2d(num_feat * 2, num_feat, kernel_size=1, stride=1, padding=0, bias=True)
 
         # Pixel-Shuffle Upsampling
-        self.up1 = PSUpsample(num_feat, num_feat, scale_factor=2)
-        self.up2 = PSUpsample(num_feat, 64, scale_factor=2)
+        self.scale = scale
+        if self.scale == 2:
+            self.up = PSUpsample(num_feat, 64, scale_factor=2)
+        else:
+            self.up1 = PSUpsample(num_feat, num_feat, scale_factor=2)
+            self.up2 = PSUpsample(num_feat, 64, scale_factor=2)
 
         # The channel of the tail layers is 64
         self.conv_hr = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
         self.conv_last = nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1)
 
         # Global Residual Learning
-        self.img_up = nn.Upsample(scale_factor=4, mode='bilinear', align_corners=False)
+        if self.scale == 2:
+            self.img_up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        else:
+            self.img_up = nn.Upsample(scale_factor=4, mode='bilinear', align_corners=False)
 
         # Activation Function
         self.lrelu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
@@ -111,8 +118,11 @@ class BasicVSR(nn.Module):
             # Fusion and Upsampling
             cat_feat = torch.cat([rlt[i], feat_prop], dim=1)
             sr_rlt = self.lrelu(self.concate(cat_feat))
-            sr_rlt = self.lrelu(self.up1(sr_rlt))
-            sr_rlt = self.lrelu(self.up2(sr_rlt))
+            if self.scale == 2:
+                sr_rlt = self.lrelu(self.up(sr_rlt))
+            else:
+                sr_rlt = self.lrelu(self.up1(sr_rlt))
+                sr_rlt = self.lrelu(self.up2(sr_rlt))
             sr_rlt = self.lrelu(self.conv_hr(sr_rlt))
             sr_rlt = self.conv_last(sr_rlt)
 
