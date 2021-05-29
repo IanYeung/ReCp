@@ -1,0 +1,38 @@
+name: BasicVSR_x2_nf64nb10_Vimeo90k_250k
+model_type: MultiFrameSRModel
+scale: 2
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 0
+
+datasets:
+  test:
+    name: Vimeo90K
+    type: Vimeo90KMultipleGTValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
+#    dataroot_gt: /home/xiyang/Datasets/Vimeo90k/vimeo_septuplet/sequences
+#    dataroot_lq: /home/xiyang/Datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_all_GT.txt
+    io_backend:
+      type: disk
+
+    num_frame: 7
+
+# network structures
+network_g:
+  type: BasicVSR
+  num_feat: 64
+  num_block: 10
+  scale: 2
+  spynet_path: ~
+
+# path
+path:
+  pretrain_network_g: experiments/BasicVSR_x2_nf64nb10_Vimeo90k_250k/models/net_g_latest.pth
+  strict_load_g: true
+
+# validation settings
+val:
+  save_img: true
+  suffix: ~  # add suffix to saved images, if None, use exp name
