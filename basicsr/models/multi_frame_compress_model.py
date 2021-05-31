@@ -150,13 +150,14 @@ class MultiFrameCompressModel(BaseModel):
                                              clip_name,
                                              f'im{idx}_{current_iter:08d}.png')
                 else:
+                    clip_name_part1, clip_name_part2 = clip_name.split('_')
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
                             f'im{idx}_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
                             f'im{idx}.png')
 
                 for sr_img_idx, sr_img in zip(val_data['frame_list'], sr_imgs):
