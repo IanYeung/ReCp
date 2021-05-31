@@ -9,13 +9,13 @@ from compressai.layers import (
     ResidualBlock, ResidualBlockUpsample, ResidualBlockWithStride,
     conv3x3, subpel_conv3x3,
 )
-
 from compressai.transforms.functional import (
     rgb2ycbcr,
     ycbcr2rgb,
     yuv_420_to_444,
     yuv_444_to_420
 )
+from compressai.ops import ste_round
 
 
 class SimpleBlock(nn.Module):
@@ -142,6 +142,49 @@ class BIC(nn.Module):
         if self.color_space == 'ycbcr':
             inp = rgb2ycbcr(inp)
         hid = self.encoder(inp)
+        out = self.decoder(hid)
+        if self.color_space == 'ycbcr':
+            out = rgb2ycbcr(out)
+        return out
+
+
+@ARCH_REGISTRY.register()
+class BICQ(nn.Module):
+
+    def __init__(self, nf=64, num_in_ch=3, num_out_ch=3, color_space='rgb'):
+        super(BICQ, self).__init__()
+        self.encoder = nn.Sequential(
+            ResidualBlockWithStride(num_in_ch, nf, stride=2),
+            ResidualBlock(nf, nf),
+            ResidualBlockWithStride(nf, nf, stride=2),
+            AttentionBlock(nf),
+            ResidualBlock(nf, nf),
+            ResidualBlockWithStride(nf, nf, stride=2),
+            ResidualBlock(nf, nf),
+            conv3x3(nf, nf, stride=2),
+            AttentionBlock(nf),
+        )
+
+        self.decoder = nn.Sequential(
+            AttentionBlock(nf),
+            ResidualBlock(nf, nf),
+            ResidualBlockUpsample(nf, nf, 2),
+            ResidualBlock(nf, nf),
+            ResidualBlockUpsample(nf, nf, 2),
+            AttentionBlock(nf),
+            ResidualBlock(nf, nf),
+            ResidualBlockUpsample(nf, nf, 2),
+            ResidualBlock(nf, nf),
+            subpel_conv3x3(nf, num_out_ch, 2),
+        )
+
+        self.color_space = color_space
+
+    def forward(self, inp):
+        if self.color_space == 'ycbcr':
+            inp = rgb2ycbcr(inp)
+        hid = self.encoder(inp)
+        hid = ste_round(hid)
         out = self.decoder(hid)
         if self.color_space == 'ycbcr':
             out = rgb2ycbcr(out)
