@@ -148,17 +148,18 @@ class MultiFrameCompressModel(BaseModel):
                 if self.opt['is_train']:
                     save_img_path = osp.join(self.opt['path']['visualization'], dataset_name,
                                              clip_name,
-                                             f'im{idx}_{current_iter:08d}.png')
+                                             'im{idx}' + f'_{current_iter:08d}.png')
                 else:
-                    clip_name_part1, clip_name_part2 = clip_name.split('_')
                     if self.opt['val']['suffix']:
+                        clip_name_part1, clip_name_part2 = clip_name.split('_')
                         save_img_path = osp.join(
                             self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
-                            f'im{idx}_{self.opt["val"]["suffix"]}.png')
+                            'im{idx}' + f'_{self.opt["val"]["suffix"]}.png')
                     else:
+                        clip_name_part1, clip_name_part2 = clip_name.split('_')
                         save_img_path = osp.join(
                             self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
-                            f'im{idx}.png')
+                            'im{idx}.png')
 
                 for sr_img_idx, sr_img in zip(val_data['frame_list'], sr_imgs):
                     imwrite(sr_img, save_img_path.format(idx=sr_img_idx.item()))
