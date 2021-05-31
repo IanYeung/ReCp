@@ -151,12 +151,14 @@ class MultiFrameSRModel(BaseModel):
                                              'im{idx}' + f'_{current_iter:08d}.png')
                 else:
                     if self.opt['val']['suffix']:
+                        clip_name_part1, clip_name_part2 = clip_name.split('_')
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
                             'im{idx}' + f'_{self.opt["val"]["suffix"]}.png')
                     else:
+                        clip_name_part1, clip_name_part2 = clip_name.split('_')
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
                             'im{idx}.png')
 
                 for sr_img_idx, sr_img in zip(val_data['frame_list'], sr_imgs):
