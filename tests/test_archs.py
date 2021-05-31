@@ -21,12 +21,36 @@ def get_basicvsr():
     return net
 
 
+def get_unet2d():
+    opt = {'type': 'UNet2D', 'in_channels': 3, 'out_channels': 3, 'num_levels': 2}
+    net = build_network(opt)
+    return net
+
+
+def get_unet3d():
+    opt = {'type': 'UNet3D', 'in_channels': 3, 'out_channels': 3, 'num_levels': 2}
+    net = build_network(opt)
+    return net
+
+
+def get_resunet3d():
+    opt = {'type': 'ResidualUNet3D', 'in_channels': 3, 'out_channels': 3, 'num_levels': 2}
+    net = build_network(opt)
+    return net
+
+
+def get_fstrn():
+    opt = {'type': 'FSTRN', 'ks': 3, 'nf': 64}
+    net = build_network(opt)
+    return net
+
+
 if __name__ == '__main__':
 
     device = torch.device('cuda:0')
 
-    inp = torch.randn(1, 3, 128, 224).to(device)
-    # inp = torch.randn(1, 7, 3, 128, 224).to(device)
-    net = get_encoderdecoder().to(device)
+    # inp = torch.randn(1, 3, 128, 224).to(device)
+    inp = torch.randn(1, 7, 3, 128, 224).to(device)
+    net = get_fstrn().to(device)
     out = net(inp)
     print(out.shape)
