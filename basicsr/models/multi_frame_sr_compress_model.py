@@ -1,4 +1,5 @@
 import torch
+from copy import deepcopy
 from collections import OrderedDict
 from os import path as osp
 from tqdm import tqdm
@@ -176,15 +177,14 @@ class MultiFrameSRCompressModel(BaseModel):
 
         for idx, val_data in enumerate(dataloader):
             clip_name = val_data['key'][0].replace('/', '_')
-            img_name = 'im4'
             self.feed_data(val_data)
             self.test()
 
             visuals = self.get_current_visuals()
-            sr_img = tensor2img([visuals['result_sr']])
-            cp_img = tensor2img([visuals['result_cp']])
+            sr_imgs = tensor2img(visuals['result_sr'])
+            cp_imgs = tensor2img(visuals['result_cp'])
             if 'gt' in visuals:
-                gt_img = tensor2img([visuals['gt']])
+                gt_imgs = tensor2img(visuals['gt'])
                 del self.gt
 
             # tentative for out of GPU memory
@@ -197,41 +197,56 @@ class MultiFrameSRCompressModel(BaseModel):
                 if self.opt['is_train']:
                     save_img_path = osp.join(
                         self.opt['path']['visualization'], dataset_name, clip_name,
-                        f'sr_{img_name}_{current_iter}.png')
+                        'im{idx}' + f'_sr_{current_iter:08d}.png')
                 else:
+                    clip_name_part1, clip_name_part2 = clip_name.split('_')
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
-                            f'sr_{img_name}_{self.opt["val"]["suffix"]}.png')
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
+                            'im{idx}' + f'_sr_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
-                            f'sr_{img_name}_{self.opt["name"]}.png')
-                imwrite(sr_img, save_img_path)
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
+                            'im{idx}' + f'_sr.png')
+                for sr_img_idx, sr_img in zip(val_data['frame_list'], sr_imgs):
+                    imwrite(sr_img, save_img_path.format(idx=sr_img_idx.item()))
 
                 if self.opt['is_train']:
                     save_img_path = osp.join(
                         self.opt['path']['visualization'], dataset_name, clip_name,
-                        f'cp_{img_name}_{current_iter}.png')
+                        'im{idx}' + f'_cp_{current_iter:08d}.png')
                 else:
+                    clip_name_part1, clip_name_part2 = clip_name.split('_')
                     if self.opt['val']['suffix']:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
-                            f'cp_{img_name}_{self.opt["val"]["suffix"]}.png')
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
+                            'im{idx}' + f'_cp_{self.opt["val"]["suffix"]}.png')
                     else:
                         save_img_path = osp.join(
-                            self.opt['path']['visualization'], dataset_name, clip_name,
-                            f'cp_{img_name}_{self.opt["name"]}.png')
-                imwrite(cp_img, save_img_path)
+                            self.opt['path']['visualization'], dataset_name, clip_name_part1, clip_name_part2,
+                            'im{idx}' + f'_cp.png')
+                for cp_img_idx, cp_img in zip(val_data['frame_list'], cp_imgs):
+                    imwrite(cp_img, save_img_path.format(idx=cp_img_idx.item()))
 
             if with_metrics:
                 # calculate metrics
-                for name, opt_ in self.opt['val']['metrics'].items():
-                    metric_data_sr = dict(img1=sr_img, img2=gt_img)
-                    self.metric_results_sr[name] += calculate_metric(metric_data_sr, opt_)
-                for name, opt_ in self.opt['val']['metrics'].items():
-                    metric_data_cp = dict(img1=cp_img, img2=gt_img)
-                    self.metric_results_cp[name] += calculate_metric(metric_data_cp, opt_)
+                opt_metric = deepcopy(self.opt['val']['metrics'])
+
+                for name, opt_ in opt_metric.items():
+                    metric_results_ = [
+                        calculate_metric(dict(img1=sr, img2=gt), opt_)
+                        for sr, gt in zip(sr_imgs, gt_imgs)
+                    ]
+                    self.metric_results_sr[name] += torch.tensor(
+                        sum(metric_results_) / len(metric_results_))
+
+                for name, opt_ in opt_metric.items():
+                    metric_results_ = [
+                        calculate_metric(dict(img1=cp, img2=gt), opt_)
+                        for cp, gt in zip(cp_imgs, gt_imgs)
+                    ]
+                    self.metric_results_cp[name] += torch.tensor(
+                        sum(metric_results_) / len(metric_results_))
             pbar.update(1)
             pbar.set_description(f'Test {clip_name}')
         pbar.close()
@@ -265,13 +280,19 @@ class MultiFrameSRCompressModel(BaseModel):
                 tb_logger.add_scalar(f'metrics_cp/{metric}', value, current_iter)
 
     def get_current_visuals(self):
-        out_dict = OrderedDict()
-        out_dict['lq'] = self.lq.detach().cpu()
-        out_dict['result_sr'] = self.output_sr.detach().cpu()
-        out_dict['result_cp'] = self.output_cp.detach().cpu()
-        if hasattr(self, 'gt'):
-            out_dict['gt'] = self.gt.detach().cpu()
-        return out_dict
+        # dim: n,t,c,h,w
+        t = self.lq.shape[1]
+        assert (t == self.gt.shape[1] and t == self.output_sr.shape[1] and t == self.output_cp.shape[1])
+        lq = self.lq.detach().cpu().squeeze(0)
+        gt = self.gt.detach().cpu().squeeze(0)
+        result_sr = self.output_sr.detach().cpu().squeeze(0)
+        result_cp = self.output_cp.detach().cpu().squeeze(0)
+        return dict(
+            lq=[lq[i] for i in range(t)],
+            gt=[gt[i] for i in range(t)],
+            result_sr=[result_sr[i] for i in range(t)],
+            result_cp=[result_cp[i] for i in range(t)]
+        )
 
     def save(self, epoch, current_iter):
         self.save_network(self.net_sr, 'net_sr', current_iter)
