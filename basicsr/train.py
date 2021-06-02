@@ -125,6 +125,71 @@ def create_train_val_dataloader(opt, logger):
     return train_loader, train_sampler, val_loader, total_epochs, total_iters
 
 
+def create_train_dataloader(opt, logger):
+    # create train dataloader
+    train_loader = None
+    for phase, dataset_opt in opt['datasets'].items():
+        phase = phase.split('_')[0]
+        if phase == 'train':
+            dataset_enlarge_ratio = dataset_opt.get('dataset_enlarge_ratio', 1)
+            train_set = build_dataset(dataset_opt)
+            train_sampler = EnlargedSampler(train_set, opt['world_size'],
+                                            opt['rank'], dataset_enlarge_ratio)
+            train_loader = build_dataloader(
+                train_set,
+                dataset_opt,
+                num_gpu=opt['num_gpu'],
+                dist=opt['dist'],
+                sampler=train_sampler,
+                seed=opt['manual_seed'])
+
+            num_iter_per_epoch = math.ceil(
+                len(train_set) * dataset_enlarge_ratio /
+                (dataset_opt['batch_size_per_gpu'] * opt['world_size']))
+            total_iters = int(opt['train']['total_iter'])
+            total_epochs = math.ceil(total_iters / (num_iter_per_epoch))
+            logger.info(
+                'Training statistics:'
+                f'\n\tNumber of train images: {len(train_set)}'
+                f'\n\tDataset enlarge ratio: {dataset_enlarge_ratio}'
+                f'\n\tBatch size per gpu: {dataset_opt["batch_size_per_gpu"]}'
+                f'\n\tWorld size (gpu number): {opt["world_size"]}'
+                f'\n\tRequire iter number per epoch: {num_iter_per_epoch}'
+                f'\n\tTotal epochs: {total_epochs}; iters: {total_iters}.')
+        elif phase == 'val':
+            pass
+        else:
+            raise ValueError(f'Dataset phase {phase} is not recognized.')
+
+    return train_loader, train_sampler, total_epochs, total_iters
+
+
+def create_val_dataloaders(opt, logger):
+    # create val dataloaders
+    val_loaders = []
+    for phase, dataset_opt in opt['datasets'].items():
+        phase = phase.split('_')[0]
+        if phase == 'train':
+            pass
+        elif phase == 'val':
+            val_set = build_dataset(dataset_opt)
+            val_loader = build_dataloader(
+                val_set,
+                dataset_opt,
+                num_gpu=opt['num_gpu'],
+                dist=opt['dist'],
+                sampler=None,
+                seed=opt['manual_seed'])
+            logger.info(
+                f'Number of val images/folders in {dataset_opt["name"]}: '
+                f'{len(val_set)}')
+            val_loaders.append(val_loader)
+        else:
+            raise ValueError(f'Dataset phase {phase} is not recognized.')
+
+    return val_loaders
+
+
 def train_pipeline(root_path):
     # parse options, set distributed setting, set ramdom seed
     opt = parse_options(root_path, is_train=True)
@@ -152,8 +217,10 @@ def train_pipeline(root_path):
     logger, tb_logger = init_loggers(opt)
 
     # create train and validation dataloaders
-    result = create_train_val_dataloader(opt, logger)
-    train_loader, train_sampler, val_loader, total_epochs, total_iters = result
+    # result = create_train_val_dataloader(opt, logger)
+    # train_loader, train_sampler, val_loader, total_epochs, total_iters = result
+    train_loader, train_sampler, total_epochs, total_iters = create_train_dataloader(opt, logger)
+    val_loaders = create_val_dataloaders(opt, logger)
 
     # create model
     if resume_state:  # resume training
@@ -225,8 +292,9 @@ def train_pipeline(root_path):
             # validation
             if opt.get('val') is not None and (current_iter %
                                                opt['val']['val_freq'] == 0):
-                model.validation(val_loader, current_iter, tb_logger,
-                                 opt['val']['save_img'])
+                for val_loader in val_loaders:
+                    model.validation(val_loader, current_iter, tb_logger,
+                                     opt['val']['save_img'])
 
             data_time = time.time()
             iter_time = time.time()
@@ -241,8 +309,9 @@ def train_pipeline(root_path):
     logger.info('Save the latest model.')
     model.save(epoch=-1, current_iter=-1)  # -1 stands for the latest
     if opt.get('val') is not None:
-        model.validation(val_loader, current_iter, tb_logger,
-                         opt['val']['save_img'])
+        for val_loader in val_loaders:
+            model.validation(val_loader, current_iter, tb_logger,
+                             opt['val']['save_img'])
     if tb_logger:
         tb_logger.close()
 
