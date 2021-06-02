@@ -43,7 +43,8 @@ class Vimeo90KSingleFrameCondTrainDataset(data.Dataset):
     def __init__(self, opt):
         super(Vimeo90KSingleFrameCondTrainDataset, self).__init__()
         self.opt = opt
-        self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(opt['dataroot_lq'])
+        self.gt_root = Path(opt['dataroot_gt'])
+        self.lq_root = Path(opt['dataroot_lq'])
 
         with open(opt['meta_info_file'], 'r') as fin:
             self.keys = [line.split(' ')[0] for line in fin]
@@ -95,8 +96,9 @@ class Vimeo90KSingleFrameCondTrainDataset(data.Dataset):
 
         # img_lq: (c, h, w)
         # img_gt: (c, h, w)
+        # img_cd: (c, h, w)
         # key: str
-        return {'lq': img_lq, 'gt': img_gt, 'key': key}
+        return {'lq': img_lq, 'gt': img_gt, 'cd': img_gt, 'key': key}
 
     def __len__(self):
         return len(self.keys)
