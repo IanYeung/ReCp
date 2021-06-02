@@ -56,6 +56,15 @@ def parse(opt_path, root_path, is_train=True):
         if dataset.get('dataroot_lq') is not None:
             dataset['dataroot_lq'] = osp.expanduser(dataset['dataroot_lq'])
 
+        if dataset.get('dataroot_gt_1') is not None:
+            dataset['dataroot_gt_1'] = osp.expanduser(dataset['dataroot_gt_1'])
+        if dataset.get('dataroot_gt_2') is not None:
+            dataset['dataroot_gt_2'] = osp.expanduser(dataset['dataroot_gt_2'])
+        if dataset.get('dataroot_gt_3') is not None:
+            dataset['dataroot_gt_3'] = osp.expanduser(dataset['dataroot_gt_3'])
+        if dataset.get('dataroot_gt_4') is not None:
+            dataset['dataroot_gt_4'] = osp.expanduser(dataset['dataroot_gt_4'])
+
     # paths
     for key, val in opt['path'].items():
         if (val is not None) and ('resume_state' in key
