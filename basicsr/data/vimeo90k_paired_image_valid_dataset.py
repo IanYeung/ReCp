@@ -72,7 +72,7 @@ class Vimeo90KSingleFrameValidDataset(data.Dataset):
         if self.is_lmdb:
             img_lq_path = f'{key}/im4'
         else:
-            img_lq_path = self.lq_root / clip / seq / f'im4.png'
+            img_lq_path = self.lq_root / clip / seq / 'im4.png'
         img_bytes = self.file_client.get(img_lq_path, 'lq')
         img_lq = imfrombytes(img_bytes, float32=True)
 
