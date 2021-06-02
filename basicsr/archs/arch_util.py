@@ -83,7 +83,7 @@ class ResBlock_with_SFT(nn.Module):
         self.conv2 = nn.Conv2d(nf, nf, 3, 1, 1)
 
         # initialization
-        initialize_weights([self.conv1, self.conv2], 0.1)
+        default_init_weights([self.conv1, self.conv2], scale=0.1)
 
     def forward(self, x):
         # x[0]: fea; x[1]: cond
@@ -91,7 +91,7 @@ class ResBlock_with_SFT(nn.Module):
         fea = F.relu(self.conv1(fea), inplace=True)
         fea = self.sft2((fea, x[1]))
         fea = self.conv2(fea)
-        return (x[0] + fea, x[1])
+        return x[0] + fea, x[1]
 
 
 class ResidualBlockNoBN(nn.Module):
