@@ -1,0 +1,131 @@
+# general settings
+name: 001_CondUNet_Vimeo90k_250k_MixCRF
+model_type: SingleFrameCondCompressModel
+scale: 1
+num_gpu: 2  # set num_gpu: 0 for cpu mode
+manual_seed: 0
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: vimeo90k_train
+    type: Vimeo90KSingleFrameCondTrainDataset
+    dataroot_gt_1: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf18_img/sequences
+    dataroot_gt_2: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf23_img/sequences
+    dataroot_gt_3: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf28_img/sequences
+    dataroot_gt_4: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf33_img/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_enh/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_train_GT.txt
+    io_backend:
+      type: disk
+
+    gt_size: 192
+    use_flip: true
+    use_rot: true
+
+    # data loader
+    use_shuffle: true
+    num_worker_per_gpu: 3
+    batch_size_per_gpu: 16
+    dataset_enlarge_ratio: 200
+    prefetch_mode: ~
+
+  val_crf18:
+    name: vimeo90k_val_crf18
+    type: Vimeo90KSingleFrameCondValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf18_img/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_enh/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
+    io_backend:
+      type: disk
+  val_crf23:
+    name: vimeo90k_val_crf23
+    type: Vimeo90KSingleFrameCondValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf23_img/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_enh/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
+    io_backend:
+      type: disk
+  val_crf28:
+    name: vimeo90k_val_crf28
+    type: Vimeo90KSingleFrameCondValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf28_img/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_enh/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
+    io_backend:
+      type: disk
+  val_crf33:
+    name: vimeo90k_val_crf33
+    type: Vimeo90KSingleFrameCondValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_com_crf33_img/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_mid_enh/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
+    io_backend:
+      type: disk
+
+# network structures
+network_g:
+  type: CondUNet
+  nf: 64
+  in_nc: 3
+  out_nc: 3
+
+# path
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: false
+  resume_state: ~
+
+# training settings
+train:
+  optim_g:
+    type: Adam
+    lr: !!float 2e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: CosineAnnealingRestartLR
+    periods: [300000]
+    restart_weights: [1]
+    eta_min: !!float 1e-7
+
+  total_iter: 300000
+  warmup_iter: -1  # no warm up
+
+  # losses
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+
+# validation settings
+val:
+  val_freq: !!float 5e2
+  save_img: true
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 2
+      test_y_channel: false
+
+# logging settings
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 5e4
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
