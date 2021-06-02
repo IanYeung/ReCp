@@ -43,7 +43,10 @@ class Vimeo90KSingleFrameCondTrainDataset(data.Dataset):
     def __init__(self, opt):
         super(Vimeo90KSingleFrameCondTrainDataset, self).__init__()
         self.opt = opt
-        self.gt_root = Path(opt['dataroot_gt'])
+        self.gt_root = {'gt_1': Path(opt['dataroot_gt_1']),
+                        'gt_2': Path(opt['dataroot_gt_2']),
+                        'gt_3': Path(opt['dataroot_gt_3']),
+                        'gt_4': Path(opt['dataroot_gt_4'])}
         self.lq_root = Path(opt['dataroot_lq'])
 
         with open(opt['meta_info_file'], 'r') as fin:
@@ -55,8 +58,12 @@ class Vimeo90KSingleFrameCondTrainDataset(data.Dataset):
         self.is_lmdb = False
         if self.io_backend_opt['type'] == 'lmdb':
             self.is_lmdb = True
-            self.io_backend_opt['db_paths'] = [self.lq_root, self.gt_root]
-            self.io_backend_opt['client_keys'] = ['lq', 'gt']
+            self.io_backend_opt['db_paths'] = [self.lq_root,
+                                               self.gt_root['gt_1'],
+                                               self.gt_root['gt_2'],
+                                               self.gt_root['gt_3'],
+                                               self.gt_root['gt_4']]
+            self.io_backend_opt['client_keys'] = ['lq', 'gt_1', 'gt_2', 'gt_3', 'gt_4']
 
     def __getitem__(self, index):
         if self.file_client is None:
@@ -68,12 +75,15 @@ class Vimeo90KSingleFrameCondTrainDataset(data.Dataset):
         key = self.keys[index]
         clip, seq = key.split('/')  # key example: 00001/0001
 
+        random_list = ['gt_1', 'gt_2', 'gt_3', 'gt_4']
+        chosen_root = random.choice(random_list)
+
         # get the GT frame (im4.png)
         if self.is_lmdb:
             img_gt_path = f'{key}/im4'
         else:
-            img_gt_path = self.gt_root / clip / seq / 'im4.png'
-        img_bytes = self.file_client.get(img_gt_path, 'gt')
+            img_gt_path = self.gt_root[chosen_root] / clip / seq / 'im4.png'
+        img_bytes = self.file_client.get(img_gt_path, chosen_root)
         img_gt = imfrombytes(img_bytes, float32=True)
 
         # get the LQ frame (im4.png)
