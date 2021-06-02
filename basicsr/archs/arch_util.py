@@ -56,6 +56,44 @@ def make_layer(basic_block, num_basic_block, **kwarg):
     return nn.Sequential(*layers)
 
 
+class SFTLayer(nn.Module):
+    def __init__(self, in_nc=32, out_nc=64, nf=32):
+        super(SFTLayer, self).__init__()
+        self.SFT_scale_conv0 = nn.Conv2d(in_nc, nf, 1)
+        self.SFT_scale_conv1 = nn.Conv2d(nf, out_nc, 1)
+        self.SFT_shift_conv0 = nn.Conv2d(in_nc, nf, 1)
+        self.SFT_shift_conv1 = nn.Conv2d(nf, out_nc, 1)
+
+    def forward(self, x):
+        # x[0]: fea; x[1]: cond
+        scale = self.SFT_scale_conv1(F.leaky_relu(self.SFT_scale_conv0(x[1]), 0.1, inplace=True))
+        shift = self.SFT_shift_conv1(F.leaky_relu(self.SFT_shift_conv0(x[1]), 0.1, inplace=True))
+        return x[0] * (scale + 1) + shift
+
+
+class ResBlock_with_SFT(nn.Module):
+    def __init__(self, nf=64):
+        super(ResBlock_with_SFT, self).__init__()
+        self.conv1 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.conv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+
+        self.sft1 = SFTLayer(in_nc=32, out_nc=64, nf=32)
+        self.conv1 = nn.Conv2d(nf, nf, 3, 1, 1)
+        self.sft2 = SFTLayer(in_nc=32, out_nc=64, nf=32)
+        self.conv2 = nn.Conv2d(nf, nf, 3, 1, 1)
+
+        # initialization
+        initialize_weights([self.conv1, self.conv2], 0.1)
+
+    def forward(self, x):
+        # x[0]: fea; x[1]: cond
+        fea = self.sft1(x)
+        fea = F.relu(self.conv1(fea), inplace=True)
+        fea = self.sft2((fea, x[1]))
+        fea = self.conv2(fea)
+        return (x[0] + fea, x[1])
+
+
 class ResidualBlockNoBN(nn.Module):
     """Residual block without BN.
 
