@@ -51,12 +51,17 @@ class MultiFrameSRCompressModel(BaseModel):
         else:
             self.cri_pix_sr = None
 
+        if train_opt.get('ssim_opt_sr'):
+            self.cri_ssim_sr = build_loss(train_opt['ssim_opt_sr']).to(self.device)
+        else:
+            self.cri_ssim_sr = None
+
         if train_opt.get('perceptual_opt_sr'):
             self.cri_perceptual_sr = build_loss(train_opt['perceptual_opt_sr']).to(self.device)
         else:
             self.cri_perceptual_sr = None
 
-        if self.cri_pix_sr is None and self.cri_perceptual_sr is None:
+        if self.cri_pix_sr is None and self.cri_ssim_sr is None and self.cri_perceptual_sr is None:
             raise ValueError('Both pixel and perceptual losses for super-resolution network are None.')
 
         if train_opt.get('pixel_opt_cp'):
@@ -64,12 +69,17 @@ class MultiFrameSRCompressModel(BaseModel):
         else:
             self.cri_pix_cp = None
 
+        if train_opt.get('ssim_opt_cp'):
+            self.cri_ssim_cp = build_loss(train_opt['ssim_opt_cp']).to(self.device)
+        else:
+            self.cri_ssim_cp = None
+
         if train_opt.get('perceptual_opt_cp'):
             self.cri_perceptual_cp = build_loss(train_opt['perceptual_opt_cp']).to(self.device)
         else:
             self.cri_perceptual_cp = None
 
-        if self.cri_pix_cp is None and self.cri_perceptual_cp is None:
+        if self.cri_pix_cp is None and self.cri_ssim_sr is None and self.cri_perceptual_cp is None:
             raise ValueError('Both pixel and perceptual losses for compression network are None.')
 
         # set up optimizers and schedulers
@@ -107,6 +117,13 @@ class MultiFrameSRCompressModel(BaseModel):
         if 'gt' in data:
             self.gt = data['gt'].to(self.device)
 
+    def _apply_loss_framewise(self, loss, x, y):
+        assert x.shape[1] == y.shape[1]
+        sum_loss = 0.
+        for i in range(x.shape[1]):
+            sum_loss += loss(x[:, i, :, :, :], y[:, i, :, :, :])
+        return sum_loss
+
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
         self.output_sr = self.net_sr(self.lq)
@@ -123,6 +140,15 @@ class MultiFrameSRCompressModel(BaseModel):
             l_pix_cp = self.cri_pix_cp(self.output_cp, self.gt)
             l_total += l_pix_cp
             loss_dict['l_pix_cp'] = l_pix_cp
+        # ssim loss
+        if self.cri_ssim_sr:
+            l_ssim_sr = self._apply_loss_framewise(self.cri_ssim_sr, self.output_sr, self.gt)
+            l_total += l_ssim_sr
+            loss_dict['l_ssim_sr'] = l_ssim_sr
+        if self.cri_ssim_cp:
+            l_ssim_cp = self._apply_loss_framewise(self.cri_ssim_cp, self.output_cp, self.gt)
+            l_total += l_ssim_cp
+            loss_dict['l_ssim_cp'] = l_ssim_cp
         # perceptual loss
         if self.cri_perceptual_sr:
             l_percep_sr, l_style_sr = self.cri_perceptual_sr(self.output_sr, self.gt)
