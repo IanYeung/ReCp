@@ -8,6 +8,9 @@ from basicsr.archs.vgg_arch import VGGFeatureExtractor
 from basicsr.utils.registry import LOSS_REGISTRY
 from .loss_util import weighted_loss
 
+from IQA_pytorch import SSIM, MS_SSIM, LPIPSvgg, DISTS
+
+
 _reduction_modes = ['none', 'mean', 'sum']
 
 
@@ -510,3 +513,27 @@ class LapLoss(nn.Module):
         pyr_inp = laplacian_pyramid(inp, self._gauss_kernel, self.max_levels)
         pyr_tar = laplacian_pyramid(tar, self._gauss_kernel, self.max_levels)
         return sum(l1_loss(a, b) for a, b in zip(pyr_inp, pyr_tar))
+
+
+@LOSS_REGISTRY.register()
+class SSIMLoss(nn.Module):
+
+    def __init__(self, loss_weight=1.0, channels=3):
+        super(SSIMLoss, self).__init__()
+        self.loss_weight = loss_weight
+        self.ssim = SSIM(channels=channels)
+
+    def forward(self, pred, target):
+        return self.loss_weight * self.ssim(pred, target, as_loss=True)
+
+
+@LOSS_REGISTRY.register()
+class MSSSIMLoss(nn.Module):
+
+    def __init__(self, loss_weight=1.0, channels=3):
+        super(MSSSIMLoss, self).__init__()
+        self.loss_weight = loss_weight
+        self.msssim = MS_SSIM(channels=channels)
+
+    def forward(self, pred, target):
+        return self.loss_weight * self.msssim(pred, target, as_loss=True)
