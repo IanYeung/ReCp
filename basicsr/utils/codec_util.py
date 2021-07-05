@@ -1,10 +1,12 @@
 import cv2
 import math
 import torch
+import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
 
 from torchjpeg.dct import blockify, deblockify, block_dct, block_idct, batch_dct, batch_idct, to_rgb, to_ycbcr
+from basicsr.archs.arch_util import pixel_unshuffle
 from basicsr.utils.matlab_functions import ycbcr2rgb, rgb2ycbcr, bgr2ycbcr, ycbcr2bgr
 
 C_f4 = np.array([[1,  1,  1,  1],
@@ -173,13 +175,12 @@ if __name__ == '__main__':
     plt.show()
 
     # extract DCT sub-band
-    dct_subband_list = []
-    reconstruct_list = []
+    dct_subband_list_v1 = []
     for i in range(4):
         for j in range(4):
             Y_ij = Y[:, :, :, i:i + 1, j:j + 1]
             dct_subband = deblockify(Y_ij, size=(256 // 4, 448 // 4))
-            dct_subband_list.append(dct_subband.squeeze())
+            dct_subband_list_v1.append(dct_subband.squeeze())
             dct_subband = (dct_subband.squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8).squeeze()
             # dct_subband_list.append(torch.from_numpy(dct_subband))
             # plt.imshow(dct_subband, cmap='gray')
@@ -187,16 +188,22 @@ if __name__ == '__main__':
             # plt.savefig(f'/home/xiyang/Results/ReCp/dct_subband_i{i}j{j}.png')
             cv2.imwrite(f'/home/xiyang/Results/ReCp/dct_subband_i{i}j{j}.png', img=dct_subband)
 
-    for i in range(4):
-        for j in range(4):
-            Y_ij = torch.zeros_like(Y)
-            Y_ij[:, :, :, i:i+1, j:j+1] = Y[:, :, :, i:i+1, j:j+1]
-            Z_ij = torch.round(C_i4.transpose(-1, -2) @ (Y_ij * S_i4) @ C_i4)
-            reconstruct = deblockify(Z_ij, size=(256, 448))
-            reconstruct_list.append(reconstruct.squeeze())
-            reconstruct = (reconstruct.squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8).squeeze()
-            # reconstruct_list.append(torch.from_numpy(reconstruct))
-            # plt.imshow(reconstruct, cmap='gray')
-            # plt.title(f'Sub-band i:{i},j:{j}')
-            # plt.savefig(f'/home/xiyang/Results/ReCp/reconstruct_i{i}j{j}.png')
-            cv2.imwrite(f'/home/xiyang/Results/ReCp/reconstruct_i{i}j{j}.png', img=reconstruct)
+    dct_subband_list_v2 = []
+    Y_sub = pixel_unshuffle(deblockify(Y, size=(256, 448)), scale=4)
+    for i in range(4 * 4):
+        dct_subband_list_v2.append(Y_sub[:, i:i + 1, :, :].squeeze())
+
+    # reconstruct_list = []
+    # for i in range(4):
+    #     for j in range(4):
+    #         Y_ij = torch.zeros_like(Y)
+    #         Y_ij[:, :, :, i:i+1, j:j+1] = Y[:, :, :, i:i+1, j:j+1]
+    #         Z_ij = torch.round(C_i4.transpose(-1, -2) @ (Y_ij * S_i4) @ C_i4)
+    #         reconstruct = deblockify(Z_ij, size=(256, 448))
+    #         reconstruct_list.append(reconstruct.squeeze())
+    #         reconstruct = (reconstruct.squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8).squeeze()
+    #         # reconstruct_list.append(torch.from_numpy(reconstruct))
+    #         # plt.imshow(reconstruct, cmap='gray')
+    #         # plt.title(f'Sub-band i:{i},j:{j}')
+    #         # plt.savefig(f'/home/xiyang/Results/ReCp/reconstruct_i{i}j{j}.png')
+    #         cv2.imwrite(f'/home/xiyang/Results/ReCp/reconstruct_i{i}j{j}.png', img=reconstruct)

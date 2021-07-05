@@ -1,10 +1,14 @@
 import functools
+import math
+import numpy as np
 
 import torch
 from torch import nn as nn
 
-from basicsr.archs.arch_util import SFTLayer, ResidualBlockNoBN, ResBlock_with_SFT, make_layer
+from basicsr.archs.arch_util import SFTLayer, ResidualBlockNoBN, ResBlock_with_SFT, make_layer, pixel_unshuffle
 from basicsr.utils.registry import ARCH_REGISTRY
+
+from torchjpeg.dct import blockify, deblockify
 
 from compressai.layers import (
     AttentionBlock,
@@ -277,3 +281,71 @@ class CondUNet(nn.Module):
         out = self.conv_last(out)
         out = mask * x[0] + out
         return out
+
+
+@ARCH_REGISTRY.register()
+class Compressor(nn.Module):
+
+    def __init__(self, block_size=4):
+        super(Compressor, self).__init__()
+        self.C_f4 = torch.tensor([[1,  1,  1,  1],
+                                  [2,  1, -1, -2],
+                                  [1, -1, -1,  1],
+                                  [1, -2,  2, -1]],
+                                 dtype=torch.float32)
+        self.C_i4 = torch.tensor([[  1,   1,    1,    1],
+                                  [  1, 1/2, -1/2,   -1],
+                                  [  1,  -1,   -1,    1],
+                                  [1/2,  -1,    1, -1/2]],
+                                 dtype=torch.float32)
+        self.S_f4 = torch.tensor([[1/4, 1/(2 * math.sqrt(10)), 1/4, 1/(2 * math.sqrt(10))],
+                                  [1/(2 * math.sqrt(10)), 1/10, 1/(2 * math.sqrt(10)), 1/10],
+                                  [1/4, 1/(2 * math.sqrt(10)), 1/4, 1/(2 * math.sqrt(10))],
+                                  [1/(2 * math.sqrt(10)), 1/10, 1/(2 * math.sqrt(10)), 1/10]],
+                                 dtype=torch.float32)
+        self.S_i4 = torch.tensor([[1/4, 1/math.sqrt(10), 1/4, 1/math.sqrt(10)],
+                                  [1/math.sqrt(10), 2/5, 1/math.sqrt(10), 2/5],
+                                  [1/4, 1/math.sqrt(10), 1/4, 1/math.sqrt(10)],
+                                  [1/math.sqrt(10), 2/5, 1/math.sqrt(10), 2/5]],
+                                 dtype=torch.float32)
+        self.Q_step_table = [0.625, 0.6875, 0.8125, 0.875, 1.0, 1.125]
+        self.block_size = block_size
+
+    def forward(self, ori_images, qp):
+        B, C, H, W = ori_images.shape
+
+        X = blockify(ori_images, size=self.block_size)
+        C_f4, S_f4 = self.C_f4.expand(*X.shape), self.S_f4.expand(*X.shape)
+
+        # forward transform
+        Y = C_f4 @ X @ C_f4.transpose(-1, -2) * S_f4
+
+        # quantization
+        Q_step = self.Q_step_table[qp % 6] * (2 ** math.floor(qp / 6))
+        Y_h = torch.round(Y / Q_step) * Q_step
+
+        # extract DCT subband
+        subbands = self._extract_subband(Y_h, H, W)
+
+        # backward transform
+        C_i4, S_i4 = self.C_i4, self.S_i4
+        Z = torch.round(C_i4.transpose(-1, -2) @ (Y_h * S_i4) @ C_i4)
+
+        com_images = deblockify(Z, size=(H, W))  # [B, 1, H, W]
+        return com_images
+
+    def _extract_subband(self, Y_h, H, W):
+        dct_subband_list = []
+
+        # for i in range(self.block_size):
+        #     for j in range(self.block_size):
+        #         Y_ij = Y_h[:, :, :, i:i + 1, j:j + 1]
+        #         dct_subband = deblockify(Y_ij, size=(H // self.block_size, W // self.block_size))
+        #         dct_subband_list.append(dct_subband)
+
+        Y_h = deblockify(Y_h, size=(H, W))  # [B, 1, H, W]
+        Y_sub = pixel_unshuffle(Y_h, scale=4)  # [B, 1, H//4, W//4]
+        for i in range(self.block_size * self.block_size):
+            dct_subband_list.append(Y_sub[:, i:i+1, :, :])
+
+        return dct_subband_list
