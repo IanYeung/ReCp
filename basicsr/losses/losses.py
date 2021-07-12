@@ -537,3 +537,30 @@ class MSSSIMLoss(nn.Module):
 
     def forward(self, pred, target):
         return self.loss_weight * self.msssim(pred, target, as_loss=True)
+
+
+@LOSS_REGISTRY.register()
+class FidelityLoss(nn.Module):
+
+    def __init__(self, loss_weight_l1loss=1.0, loss_weight_msssim=1.0, channels=3):
+        super(FidelityLoss, self).__init__()
+        self.l1loss = L1Loss()
+        self.msssim = MS_SSIM(channels=channels)
+        self.loss_weight_l1loss = loss_weight_l1loss
+        self.loss_weight_msssim = loss_weight_msssim
+
+    def forward(self, pred, target):
+        return self.loss_weight_l1loss * self.l1loss(pred, target) + \
+               self.loss_weight_msssim * self.msssim(pred, target, as_loss=True)
+
+
+@LOSS_REGISTRY.register()
+class RateLoss(nn.Module):
+
+    def __init__(self, loss_weight=1.0):
+        super(RateLoss, self).__init__()
+        self.loss_weight = loss_weight
+
+    def forward(self, pred, num_pixels):
+        l_bpp = torch.log(pred).sum() / (-math.log(2) * num_pixels)
+        return self.loss_weight * l_bpp
