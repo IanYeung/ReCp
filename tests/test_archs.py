@@ -57,7 +57,7 @@ def get_condunet():
 
 
 def get_compressor():
-    opt = {'type': 'FrameCompressor'}
+    opt = {'type': 'FrameCompressor', 'num_ch': 1, 'block_size': 4}
     net = build_network(opt)
     return net
 
@@ -94,3 +94,20 @@ if __name__ == '__main__':
     plt.imshow(np.abs(com_img - ori_img), cmap='gray')
     plt.title('Difference Image')
     plt.show()
+
+    # net = get_compressor().to(device)
+    #
+    # block_size = 4
+    # ori_img = cv2.imread('/home/xiyang/Downloads/0100/im1.png')[:, :, [2, 1, 0]]
+    # plt.imshow(ori_img)
+    # plt.title('Original Image')
+    # plt.show()
+    #
+    # ori_images = torch.from_numpy(ori_img).permute(2, 0, 1).unsqueeze(dim=0).float()  # [B, 3, H, W]
+    #
+    # com_images, likelihoods = net(ori_images, qp=30)  # [B, 3, H, W]
+    #
+    # com_img = (com_images.detach().squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8)  # [H, W, 3]
+    # plt.imshow(com_img)
+    # plt.title('Compressed Image')
+    # plt.show()

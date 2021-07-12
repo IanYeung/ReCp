@@ -246,7 +246,7 @@ class CondUNet(nn.Module):
 @ARCH_REGISTRY.register()
 class FrameCompressor(CompressionModel):
 
-    def __init__(self, block_size=4):
+    def __init__(self, num_ch=1, block_size=4):
         super().__init__(entropy_bottleneck_channels=1)
 
         self.C_f4 = torch.tensor([[1,  1,  1,  1],
@@ -278,7 +278,7 @@ class FrameCompressor(CompressionModel):
 
         # Entropy Bottleneck
         for i in range(self.block_size * self.block_size):
-            setattr(self, 'entropy_bottleneck_{:02d}'.format(i), EntropyBottleneck(1))
+            setattr(self, 'entropy_bottleneck_{:02d}'.format(i), EntropyBottleneck(num_ch))
 
     def forward(self, ori_images, qp, training=False):
 
@@ -316,20 +316,20 @@ class FrameCompressor(CompressionModel):
         C_i4, S_i4 = self.C_i4, self.S_i4
         Z = torch.round(C_i4.transpose(-1, -2) @ (Y_h * S_i4) @ C_i4)
 
-        com_images = deblockify(Z, size=(H, W))  # [B, 1, H, W]
+        com_images = deblockify(Z, size=(H, W))  # [B, C, H, W]
         return com_images, likehihood_list
 
     def _extract_subband(self, Y_h, H, W):
         dct_subband_list = []
-        Y_h = deblockify(Y_h, size=(H, W))  # [B, 1, H, W]
-        Y_sub = F.pixel_unshuffle(Y_h, downscale_factor=4)  # [B, 1, H//4, W//4]
+        Y_h = deblockify(Y_h, size=(H, W))  # [B, C, H, W]
+        Y_sub = F.pixel_unshuffle(Y_h, downscale_factor=4)  # [B, C, H//4, W//4]
         for i in range(self.block_size * self.block_size):
-            dct_subband_list.append(Y_sub[:, i:i+1, :, :])
+            dct_subband_list.append(Y_sub[:, (i)*Y_h.size(1):(i+1)*Y_h.size(1), :, :])
         return dct_subband_list
 
     def _combine_subband(self, dct_subband_list):
-        dct_subband = torch.cat(dct_subband_list, dim=1)  # [B, 1, H//4, W//4]
-        Y_h = F.pixel_shuffle(dct_subband, upscale_factor=4)  # [B, 1, H, W]
+        dct_subband = torch.cat(dct_subband_list, dim=1)  # [B, C, H//4, W//4]
+        Y_h = F.pixel_shuffle(dct_subband, upscale_factor=4)  # [B, C, H, W]
         Y_h = blockify(Y_h, size=self.block_size)
         return Y_h
 
