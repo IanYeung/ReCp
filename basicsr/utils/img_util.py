@@ -6,6 +6,17 @@ import torch
 from torchvision.utils import make_grid
 
 
+def normalize(imgs):
+
+    def _norm(img):
+        return img.astype(np.float32) / 255.
+
+    if isinstance(imgs, list):
+        return [_norm(img) for img in imgs]
+    else:
+        return _norm(imgs)
+
+
 def img2tensor(imgs, bgr2rgb=True, float32=True):
     """Numpy array to tensor.
 
@@ -118,6 +129,22 @@ def imfrombytes(content, flag='color', float32=False):
         'unchanged': cv2.IMREAD_UNCHANGED
     }
     img = cv2.imdecode(img_np, imread_flags[flag])
+    if float32:
+        img = img.astype(np.float32) / 255.
+    return img
+
+
+def imread(path, flag='color', float32=False):
+    """
+    read image by cv2 or from lmdb
+    return: Numpy float32, HWC, BGR, [0,1]
+    """
+    imread_flags = {
+        'color': cv2.IMREAD_COLOR,
+        'grayscale': cv2.IMREAD_GRAYSCALE,
+        'unchanged': cv2.IMREAD_UNCHANGED
+    }
+    img = cv2.imread(path, imread_flags[flag])
     if float32:
         img = img.astype(np.float32) / 255.
     return img
