@@ -88,6 +88,48 @@ def generate_frame_indices(crt_idx,
     return indices
 
 
+def generate_frame_indices_with_scene(crt_idx,
+                                      max_frame_num,
+                                      num_frames,
+                                      scene_list,
+                                      padding='replicate'):
+    """Generate an index list for reading N frames from a sequence of images (with a scene list)
+    Args:
+        crt_idx (int): current center index
+        max_frame_num (int): max number of the sequence of images (calculated from 1)
+        num_frames (int): reading N frames
+        scene_list (list): scene list indicating the start of each scene, example: [0, 10, 51, 100]
+        padding (str): padding mode, one of replicate
+            Example: crt_i = 0, N = 5
+            replicate: [0, 0, 0, 1, 2]
+
+    Returns:
+        return_l (list [int]): a list of indexes
+    """
+    assert max_frame_num == scene_list[-1]
+    n_pad = num_frames // 2
+    indices = []
+
+    num_scene = len(scene_list) - 1
+    for i in range(num_scene):
+        if (crt_idx >= scene_list[i]) and (crt_idx <= scene_list[i + 1] - 1):
+            for j in range(crt_idx - n_pad, crt_idx + n_pad + 1):
+                if j < scene_list[i]:
+                    if padding == 'replicate':
+                        pad_idx = scene_list[i]
+                    else:
+                        raise ValueError('Wrong padding mode')
+                elif j > (scene_list[i + 1] - 1):
+                    if padding == 'replicate':
+                        pad_idx = scene_list[i + 1] - 1
+                    else:
+                        raise ValueError('Wrong padding mode')
+                else:
+                    pad_idx = j
+                indices.append(pad_idx)
+    return indices
+
+
 def paired_paths_from_lmdb(folders, keys):
     """Generate paired paths from lmdb files.
 
