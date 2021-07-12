@@ -4,11 +4,15 @@ import numpy as np
 
 import torch
 from torch import nn as nn
+from torch.nn import functional as F
 
-from basicsr.archs.arch_util import SFTLayer, ResidualBlockNoBN, ResBlock_with_SFT, make_layer, pixel_unshuffle
+from basicsr.archs.arch_util import SFTLayer, ResidualBlockNoBN, ResBlock_with_SFT, make_layer
 from basicsr.utils.registry import ARCH_REGISTRY
 
 from torchjpeg.dct import blockify, deblockify
+
+from compressai.entropy_models import EntropyBottleneck
+from compressai.models import CompressionModel
 
 from compressai.layers import (
     AttentionBlock,
@@ -21,7 +25,6 @@ from compressai.transforms.functional import (
     yuv_420_to_444,
     yuv_444_to_420
 )
-from compressai.ops import ste_round
 
 
 class SimpleBlock(nn.Module):
@@ -155,49 +158,6 @@ class BIC(nn.Module):
 
 
 @ARCH_REGISTRY.register()
-class BICQ(nn.Module):
-
-    def __init__(self, nf=64, num_in_ch=3, num_out_ch=3, color_space='rgb'):
-        super(BICQ, self).__init__()
-        self.encoder = nn.Sequential(
-            ResidualBlockWithStride(num_in_ch, nf, stride=2),
-            ResidualBlock(nf, nf),
-            ResidualBlockWithStride(nf, nf, stride=2),
-            AttentionBlock(nf),
-            ResidualBlock(nf, nf),
-            ResidualBlockWithStride(nf, nf, stride=2),
-            ResidualBlock(nf, nf),
-            conv3x3(nf, nf, stride=2),
-            AttentionBlock(nf),
-        )
-
-        self.decoder = nn.Sequential(
-            AttentionBlock(nf),
-            ResidualBlock(nf, nf),
-            ResidualBlockUpsample(nf, nf, 2),
-            ResidualBlock(nf, nf),
-            ResidualBlockUpsample(nf, nf, 2),
-            AttentionBlock(nf),
-            ResidualBlock(nf, nf),
-            ResidualBlockUpsample(nf, nf, 2),
-            ResidualBlock(nf, nf),
-            subpel_conv3x3(nf, num_out_ch, 2),
-        )
-
-        self.color_space = color_space
-
-    def forward(self, inp):
-        if self.color_space == 'ycbcr':
-            inp = rgb2ycbcr(inp)
-        hid = self.encoder(inp)
-        hid = ste_round(hid)
-        out = self.decoder(hid)
-        if self.color_space == 'ycbcr':
-            out = rgb2ycbcr(out)
-        return out
-
-
-@ARCH_REGISTRY.register()
 class CondUNet(nn.Module):
 
     def __init__(self, in_nc=3, out_nc=3, nf=64, act_type='relu'):
@@ -284,34 +244,48 @@ class CondUNet(nn.Module):
 
 
 @ARCH_REGISTRY.register()
-class Compressor(nn.Module):
+class FrameCompressor(CompressionModel):
 
     def __init__(self, block_size=4):
-        super(Compressor, self).__init__()
+        super().__init__(entropy_bottleneck_channels=1)
+
         self.C_f4 = torch.tensor([[1,  1,  1,  1],
                                   [2,  1, -1, -2],
                                   [1, -1, -1,  1],
                                   [1, -2,  2, -1]],
                                  dtype=torch.float32)
+
         self.C_i4 = torch.tensor([[  1,   1,    1,    1],
                                   [  1, 1/2, -1/2,   -1],
                                   [  1,  -1,   -1,    1],
                                   [1/2,  -1,    1, -1/2]],
                                  dtype=torch.float32)
+
         self.S_f4 = torch.tensor([[1/4, 1/(2 * math.sqrt(10)), 1/4, 1/(2 * math.sqrt(10))],
                                   [1/(2 * math.sqrt(10)), 1/10, 1/(2 * math.sqrt(10)), 1/10],
                                   [1/4, 1/(2 * math.sqrt(10)), 1/4, 1/(2 * math.sqrt(10))],
                                   [1/(2 * math.sqrt(10)), 1/10, 1/(2 * math.sqrt(10)), 1/10]],
                                  dtype=torch.float32)
+
         self.S_i4 = torch.tensor([[1/4, 1/math.sqrt(10), 1/4, 1/math.sqrt(10)],
                                   [1/math.sqrt(10), 2/5, 1/math.sqrt(10), 2/5],
                                   [1/4, 1/math.sqrt(10), 1/4, 1/math.sqrt(10)],
                                   [1/math.sqrt(10), 2/5, 1/math.sqrt(10), 2/5]],
                                  dtype=torch.float32)
+
         self.Q_step_table = [0.625, 0.6875, 0.8125, 0.875, 1.0, 1.125]
         self.block_size = block_size
 
-    def forward(self, ori_images, qp):
+        # Entropy Bottleneck
+        for i in range(self.block_size * self.block_size):
+            setattr(self, 'entropy_bottleneck_{:02d}'.format(i), EntropyBottleneck(1))
+
+    def forward(self, ori_images, qp, training=False):
+
+        self.C_f4, self.C_i4, self.S_f4, self.S_i4 = \
+            self.C_f4.to(ori_images.device), self.C_i4.to(ori_images.device), \
+            self.S_f4.to(ori_images.device), self.S_i4.to(ori_images.device)
+
         B, C, H, W = ori_images.shape
 
         X = blockify(ori_images, size=self.block_size)
@@ -322,30 +296,125 @@ class Compressor(nn.Module):
 
         # quantization
         Q_step = self.Q_step_table[qp % 6] * (2 ** math.floor(qp / 6))
-        Y_h = torch.round(Y / Q_step) * Q_step
+        Y_h = Y / Q_step
 
-        # extract DCT subband
-        subbands = self._extract_subband(Y_h, H, W)
+        inp_subbands_list = self._extract_subband(Y_h, H, W)
+
+        # dct_subbands_list = list(map(torch.round, dct_subbands_list))
+        out_subband_list, likehihood_list = [], []
+        for i in range(self.block_size * self.block_size):
+            subband, likelihood = \
+                getattr(self, 'entropy_bottleneck_{:02d}'.format(i))(inp_subbands_list[i], training=training)
+            out_subband_list.append(subband)
+            likehihood_list.append(likelihood)
+
+        Y_h = self._combine_subband(out_subband_list)
+
+        Y_h = Y_h * Q_step
 
         # backward transform
         C_i4, S_i4 = self.C_i4, self.S_i4
         Z = torch.round(C_i4.transpose(-1, -2) @ (Y_h * S_i4) @ C_i4)
 
         com_images = deblockify(Z, size=(H, W))  # [B, 1, H, W]
-        return com_images
+        return com_images, likehihood_list
 
     def _extract_subband(self, Y_h, H, W):
         dct_subband_list = []
-
-        # for i in range(self.block_size):
-        #     for j in range(self.block_size):
-        #         Y_ij = Y_h[:, :, :, i:i + 1, j:j + 1]
-        #         dct_subband = deblockify(Y_ij, size=(H // self.block_size, W // self.block_size))
-        #         dct_subband_list.append(dct_subband)
-
         Y_h = deblockify(Y_h, size=(H, W))  # [B, 1, H, W]
-        Y_sub = pixel_unshuffle(Y_h, scale=4)  # [B, 1, H//4, W//4]
+        Y_sub = F.pixel_unshuffle(Y_h, downscale_factor=4)  # [B, 1, H//4, W//4]
         for i in range(self.block_size * self.block_size):
             dct_subband_list.append(Y_sub[:, i:i+1, :, :])
-
         return dct_subband_list
+
+    def _combine_subband(self, dct_subband_list):
+        dct_subband = torch.cat(dct_subband_list, dim=1)  # [B, 1, H//4, W//4]
+        Y_h = F.pixel_shuffle(dct_subband, upscale_factor=4)  # [B, 1, H, W]
+        Y_h = blockify(Y_h, size=self.block_size)
+        return Y_h
+
+    def _divisive_normalization(self, dct_subband_list):
+        return dct_subband_list
+
+
+# @ARCH_REGISTRY.register()
+# class FrameCompressor(CompressionModel):
+#
+#     def __init__(self, block_size=4):
+#         super().__init__(entropy_bottleneck_channels=1)
+#
+#         self.C_f4 = torch.tensor([[1,  1,  1,  1],
+#                                   [2,  1, -1, -2],
+#                                   [1, -1, -1,  1],
+#                                   [1, -2,  2, -1]],
+#                                  dtype=torch.float32)
+#
+#         self.C_i4 = torch.tensor([[  1,   1,    1,    1],
+#                                   [  1, 1/2, -1/2,   -1],
+#                                   [  1,  -1,   -1,    1],
+#                                   [1/2,  -1,    1, -1/2]],
+#                                  dtype=torch.float32)
+#
+#         self.S_f4 = torch.tensor([[1/4, 1/(2 * math.sqrt(10)), 1/4, 1/(2 * math.sqrt(10))],
+#                                   [1/(2 * math.sqrt(10)), 1/10, 1/(2 * math.sqrt(10)), 1/10],
+#                                   [1/4, 1/(2 * math.sqrt(10)), 1/4, 1/(2 * math.sqrt(10))],
+#                                   [1/(2 * math.sqrt(10)), 1/10, 1/(2 * math.sqrt(10)), 1/10]],
+#                                  dtype=torch.float32)
+#
+#         self.S_i4 = torch.tensor([[1/4, 1/math.sqrt(10), 1/4, 1/math.sqrt(10)],
+#                                   [1/math.sqrt(10), 2/5, 1/math.sqrt(10), 2/5],
+#                                   [1/4, 1/math.sqrt(10), 1/4, 1/math.sqrt(10)],
+#                                   [1/math.sqrt(10), 2/5, 1/math.sqrt(10), 2/5]],
+#                                  dtype=torch.float32)
+#
+#         self.Q_step_table = [0.625, 0.6875, 0.8125, 0.875, 1.0, 1.125]
+#         self.block_size = block_size
+#
+#         # Entropy Bottleneck
+#         self.entropy_bottleneck = EntropyBottleneck(self.block_size * self.block_size)
+#
+#     def forward(self, ori_images, qp, training=False):
+#
+#         self.C_f4, self.C_i4, self.S_f4, self.S_i4 = \
+#             self.C_f4.to(ori_images.device), self.C_i4.to(ori_images.device), \
+#             self.S_f4.to(ori_images.device), self.S_i4.to(ori_images.device)
+#
+#         B, C, H, W = ori_images.shape
+#
+#         X = blockify(ori_images, size=self.block_size)
+#         C_f4, S_f4 = self.C_f4.expand(*X.shape), self.S_f4.expand(*X.shape)
+#
+#         # forward transform
+#         Y = C_f4 @ X @ C_f4.transpose(-1, -2) * S_f4
+#
+#         # quantization
+#         Q_step = self.Q_step_table[qp % 6] * (2 ** math.floor(qp / 6))
+#         Y_h = Y / Q_step
+#
+#         Y_sub = self._extract_subband(Y_h, H, W)
+#
+#         Y_sub, likelihood = self.entropy_bottleneck(Y_sub, training=training)
+#
+#         Y_h = self._combine_subband(Y_sub)
+#
+#         Y_h = Y_h * Q_step
+#
+#         # backward transform
+#         C_i4, S_i4 = self.C_i4, self.S_i4
+#         Z = torch.round(C_i4.transpose(-1, -2) @ (Y_h * S_i4) @ C_i4)
+#
+#         com_images = deblockify(Z, size=(H, W))  # [B, 1, H, W]
+#         return com_images, likelihood
+#
+#     def _extract_subband(self, Y_h, H, W):
+#         Y_h = deblockify(Y_h, size=(H, W))  # [B, 1, H, W]
+#         Y_sub = F.pixel_unshuffle(Y_h, downscale_factor=4)  # [B, 1, H//4, W//4]
+#         return Y_sub
+#
+#     def _combine_subband(self, Y_sub):
+#         Y_h = F.pixel_shuffle(Y_sub, upscale_factor=4)  # [B, 1, H, W]
+#         Y_h = blockify(Y_h, size=self.block_size)
+#         return Y_h
+#
+#     def _divisive_normalization(self, dct_subband_list):
+#         return dct_subband_list
