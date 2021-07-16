@@ -5,6 +5,8 @@ import cv2
 import glob
 import json
 import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchvision.transforms.functional as TF
@@ -108,10 +110,11 @@ def compare_results():
 
 
 def get_json(experiment_name):
-    setting_names = ['Vimeo90k_crf18_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf28_video', 'Vimeo90k_crf33_video']
+    # setting_names = ['Vimeo90k_crf18_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf28_video', 'Vimeo90k_crf33_video']
+    setting_names = ['Vimeo90k_crf19_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf27_video', 'Vimeo90k_crf31_video']
     for setting_name in setting_names:
-        read_root = f'/{src_root}/{experiment_name}/visualization/{setting_name}'
-        save_root = f'/{src_root}/{experiment_name}/visualization/{setting_name}_json'
+        read_root = f'{src_root}/{experiment_name}/{setting_name}'
+        save_root = f'{src_root}/{experiment_name}/{setting_name}_json'
         video_paths = sorted(glob.glob(osp.join(read_root, '*', '*.mp4')))
         for video_path in video_paths:
             print(video_path)
@@ -123,11 +126,12 @@ def get_json(experiment_name):
 
 
 def get_bpp(src_root, experiment_name):
-    setting_names = ['Vimeo90k_crf18_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf28_video', 'Vimeo90k_crf33_video']
+    # setting_names = ['Vimeo90k_crf18_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf28_video', 'Vimeo90k_crf33_video']
+    setting_names = ['Vimeo90k_crf19_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf27_video', 'Vimeo90k_crf31_video']
     results_list = []
     H, W = 256, 448
     for setting_name in setting_names:
-        root = f'/{src_root}/{experiment_name}/visualization/{setting_name}_json'
+        root = f'{src_root}/{experiment_name}/{setting_name}_json'
         json_paths = sorted(glob.glob(osp.join(root, '*', '*.json')))
         bpp_list = [0 for i in range(len(json_paths))]
         pbar = ProgressBar(len(json_paths))
@@ -145,17 +149,41 @@ def get_bpp(src_root, experiment_name):
     print(results_list)
 
 
-def get_psnr(src_root, experiment_name):
+def get_bps(src_root, experiment_name):
+    setting_names = ['Vimeo90k_crf18_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf28_video', 'Vimeo90k_crf33_video']
+    # setting_names = ['Vimeo90k_crf19_video', 'Vimeo90k_crf23_video', 'Vimeo90k_crf27_video', 'Vimeo90k_crf31_video']
+    results_list = []
+    H, W = 256, 448
+    for setting_name in setting_names:
+        root = f'{src_root}/{experiment_name}/{setting_name}_json'
+        json_paths = sorted(glob.glob(osp.join(root, '*', '*.json')))
+        bps_list = [0 for i in range(len(json_paths))]
+        pbar = ProgressBar(len(json_paths))
+        for idx, json_path in enumerate(json_paths):
+            names = json_path.split('/')
+            with open(json_path, 'r') as json_file:
+                data = json.load(json_file)
+            avg_bitrate = data['avg_bitrate']
+            avg_fps = data['avg_fps']
+            bps_list[idx] = avg_bitrate / 1000
+            pbar.update()
+            # pbar.update('Processing {}/{}: {:.8f}'.format(names[-2], names[-1], bpp_list[idx]))
+        print('{}, Avg kbps: {:.8f}'.format(setting_name, sum(bps_list) / len(bps_list)))
+        results_list.append('{:.8f}'.format(sum(bps_list) / len(bps_list)))
+    print(results_list)
+
+
+def get_sf_psnr(src_root, experiment_name):
     setting_names = ['Vimeo90k_crf18_frame', 'Vimeo90k_crf23_frame', 'Vimeo90k_crf28_frame', 'Vimeo90k_crf33_frame']
     results_list = []
     ref_img_paths = sorted(glob.glob(os.path.join(src_root, 'GT', '*', '*', 'im4.png')))
     for setting_name in setting_names:
-        psnr_list = [0 for i in range(len(ref_img_paths))]
+        psnr_list = [0. for i in range(len(ref_img_paths))]
         pbar = ProgressBar(len(ref_img_paths))
         for idx, ref_img_path in enumerate(ref_img_paths):
             names = ref_img_path.split('/')
             ref_img = cv2.imread(ref_img_path, cv2.IMREAD_UNCHANGED)
-            inp_img_path = ref_img_path.replace('/GT/', '/{}/visualization/{}/'.format(experiment_name, setting_name))
+            inp_img_path = ref_img_path.replace('/GT/', '/{}/{}/'.format(experiment_name, setting_name))
             inp_img = cv2.imread(inp_img_path, cv2.IMREAD_UNCHANGED)
             psnr_list[idx] = calculate_psnr(img1=inp_img, img2=ref_img, crop_border=False)
             pbar.update()
@@ -165,24 +193,69 @@ def get_psnr(src_root, experiment_name):
     print(results_list)
 
 
-def get_msssim(src_root, experiment_name):
+def get_sf_msssim(src_root, experiment_name):
     setting_names = ['Vimeo90k_crf18_frame', 'Vimeo90k_crf23_frame', 'Vimeo90k_crf28_frame', 'Vimeo90k_crf33_frame']
     results_list = []
     ref_img_paths = sorted(glob.glob(os.path.join(src_root, 'GT', '*', '*', 'im4.png')))
     for setting_name in setting_names:
-        msssim_list = [0 for i in range(len(ref_img_paths))]
+        msssim_list = [0. for i in range(len(ref_img_paths))]
         pbar = ProgressBar(len(ref_img_paths))
         for idx, ref_img_path in enumerate(ref_img_paths):
             names = ref_img_path.split('/')
             ref_img = cv2.imread(ref_img_path, cv2.IMREAD_UNCHANGED)
-            inp_img_path = ref_img_path.replace('/GT/', '/{}/visualization/{}/'.format(experiment_name, setting_name))
+            inp_img_path = ref_img_path.replace('/GT/', '/{}/{}/'.format(experiment_name, setting_name))
             inp_img = cv2.imread(inp_img_path, cv2.IMREAD_UNCHANGED)
             ref_img = TF.to_tensor(ref_img[:, :, [2, 1, 0]]).unsqueeze(0)
             inp_img = TF.to_tensor(inp_img[:, :, [2, 1, 0]]).unsqueeze(0)
             ms_ssim = MS_SSIM(channels=3)
             msssim_list[idx] = ms_ssim(inp_img, ref_img, as_loss=False).item()
             pbar.update()
-            pbar.update('Processing {}/{}/{}: {:.6f}'.format(names[-3], names[-2], names[-1], msssim_list[idx]))
+            # pbar.update('Processing {}/{}/{}: {:.6f}'.format(names[-3], names[-2], names[-1], msssim_list[idx]))
+        print('{}, Avg MS-SSIM: {:.6f}'.format(setting_name, sum(msssim_list) / len(msssim_list)))
+        results_list.append('{:.6f}'.format(sum(msssim_list) / len(msssim_list)))
+    print(results_list)
+
+
+def get_mf_psnr(src_root, experiment_name):
+    setting_names = ['Vimeo90k_crf19_frame', 'Vimeo90k_crf23_frame', 'Vimeo90k_crf27_frame', 'Vimeo90k_crf31_frame']
+    results_list = []
+    ref_seq_paths = sorted(glob.glob(os.path.join(src_root, 'GT', '*', '*')))
+    for setting_name in setting_names:
+        psnr_list = [0. for _ in range(len(ref_seq_paths))]
+        pbar = ProgressBar(len(ref_seq_paths))
+        for idx, ref_seq_path in enumerate(ref_seq_paths):
+            names = ref_seq_path.split('/')
+            ref_img_paths = sorted(glob.glob(os.path.join(ref_seq_path, 'im*.png')))
+            for ref_img_path in ref_img_paths:
+                ref_img = cv2.imread(ref_img_path, cv2.IMREAD_UNCHANGED)
+                inp_img_path = ref_img_path.replace('/GT/', '/{}/{}/'.format(experiment_name, setting_name))
+                inp_img = cv2.imread(inp_img_path, cv2.IMREAD_UNCHANGED)
+                psnr_list[idx] += min(calculate_psnr(img1=inp_img, img2=ref_img, crop_border=False), 50) / len(ref_img_paths)
+            pbar.update('Processing {}/{}: {:.4f} dB'.format(names[-2], names[-1], psnr_list[idx]))
+        print('{}, Avg PSNR: {:.4f} dB'.format(setting_name, sum(psnr_list) / len(psnr_list)))
+        results_list.append('{:.4f}'.format(sum(psnr_list) / len(psnr_list)))
+    print(results_list)
+
+
+def get_mf_msssim(src_root, experiment_name):
+    setting_names = ['Vimeo90k_crf19_frame', 'Vimeo90k_crf23_frame', 'Vimeo90k_crf27_frame', 'Vimeo90k_crf31_frame']
+    results_list = []
+    ref_seq_paths = sorted(glob.glob(os.path.join(src_root, 'GT', '*', '*')))
+    for setting_name in setting_names:
+        msssim_list = [0. for _ in range(len(ref_seq_paths))]
+        pbar = ProgressBar(len(ref_seq_paths))
+        for idx, ref_seq_path in enumerate(ref_seq_paths):
+            names = ref_seq_path.split('/')
+            ref_img_paths = sorted(glob.glob(os.path.join(ref_seq_path, 'im*.png')))
+            for ref_img_path in ref_img_paths:
+                ref_img = cv2.imread(ref_img_path, cv2.IMREAD_UNCHANGED)
+                inp_img_path = ref_img_path.replace('/GT/', '/{}/{}/'.format(experiment_name, setting_name))
+                inp_img = cv2.imread(inp_img_path, cv2.IMREAD_UNCHANGED)
+                ref_img = TF.to_tensor(ref_img[:, :, [2, 1, 0]]).unsqueeze(0)
+                inp_img = TF.to_tensor(inp_img[:, :, [2, 1, 0]]).unsqueeze(0)
+                ms_ssim = MS_SSIM(channels=3)
+                msssim_list[idx] += ms_ssim(inp_img, ref_img, as_loss=False).item() / len(ref_img_paths)
+            pbar.update('Processing {}/{}: {:.6f}'.format(names[-2], names[-1], msssim_list[idx]))
         print('{}, Avg MS-SSIM: {:.6f}'.format(setting_name, sum(msssim_list) / len(msssim_list)))
         results_list.append('{:.6f}'.format(sum(msssim_list) / len(msssim_list)))
     print(results_list)
@@ -190,22 +263,51 @@ def get_msssim(src_root, experiment_name):
 
 if __name__ == '__main__':
 
-    src_root = f'/home/xiyang/Datasets/ReCp/results'
-
-    experiment_name = '001_MSRResNet_x2_f64b16_Vimeo90k_250k_B16G1_wandb'
-    # experiment_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf23'
-    # experiment_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf28'
-    # experiment_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf23'
-    # experiment_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf28'
-
     # compare_results()
-    # get_json()
 
-    print(experiment_name)
-    get_bpp(src_root, experiment_name)
-    # get_psnr(src_root, experiment_name)
-    # get_msssim(src_root, experiment_name)
+    src_root = '/home/xiyang/data0/datasets/ReCp/isr_results'
 
+    experiment_list = ['001_MSRResNet_x2_f64b16_Vimeo90k_250k_B16G1_wandb/visualization',
+                       '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf18/visualization',
+                       '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf23/visualization',
+                       '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf28/visualization',
+                       '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf33/visualization']
 
+    src_root = '/home/xiyang/data0/datasets/ReCp/vsr_results'
 
+    experiment_list = [
+        'BasicVSR_x2_nf64nb10_Vimeo90k_250k/visualization',
+        'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf19/visualization',
+        'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf23/visualization',
+        'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf27/visualization',
+        'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf31/visualization'
+    ]
 
+    # experiment_list = [
+    #     'BasicVSR_x2_nf64nb10_Vimeo90k_250k/visualization',
+    #     'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf19_msssim/visualization',
+    #     'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf23_msssim/visualization',
+    #     'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf27_msssim/visualization',
+    #     'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf31_msssim/visualization'
+    # ]
+
+    # experiment_list = [
+    #     'MSRResNet_x2_Joint_Vimeo90k_250k',
+    #     'MSRResNet_x2_Plain_Vimeo90k_250k'
+    # ]
+
+    for experiment_name in experiment_list:
+        print('--------' * 10)
+        print(experiment_name)
+        print('--------' * 10)
+
+        # get_json(experiment_name)
+
+        # get_bpp(src_root, experiment_name)
+        get_bps(src_root, experiment_name)
+
+        # get_sf_psnr(src_root, experiment_name)
+        # get_sf_msssim(src_root, experiment_name)
+
+        # get_mf_psnr(src_root, experiment_name)
+        # get_mf_msssim(src_root, experiment_name)
