@@ -303,11 +303,11 @@ def video_inference_mf_rgb(opt):
         t1 = time.time()
         while True:
             k += 1
-            in_bytes = reader.stdout.read(width * height * 3)
+            in_bytes = reader.stdout.read(w * h * 3)
             if not in_bytes:
                 print('Finish reading video')
                 break
-            frame = np.frombuffer(in_bytes, np.uint8).reshape([height, width, 3])
+            frame = np.frombuffer(in_bytes, np.uint8).reshape([h, w, 3])
             frame_buf.append(frame)
             enhancer.sequence_input_pool(frame)
 
@@ -564,11 +564,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Video Restoration')
     parser.add_argument('--input_video',
-                        default='/home/xiyang/Datasets/test/test_videos/lq_videos_tmp/*')
+                        default='/home/xiyang/Datasets/MCL-JVC/720P/*')
     parser.add_argument('--save_path',
-                        default='/home/xiyang/Datasets/test/test_videos/hq_videos_tmp')
+                        default='/home/xiyang/Datasets/MCL-JVC/720P_out_sr')
     parser.add_argument('--model_arch', type=str, default='MSRResNet_Y')
-    parser.add_argument('--load_path', default='../experiments/pretrained_models/MSRResNet_x2_Y_JointTrain.pth')
+    parser.add_argument('--load_path', default='../experiments/pretrained_models/MSRResNet_x2_Y.pth')
     parser.add_argument('--device', type=str, default='cuda:0')
     parser.add_argument('--mode', type=str, default='yuv')
     parser.add_argument('--bitrate', type=str, default='10M')
