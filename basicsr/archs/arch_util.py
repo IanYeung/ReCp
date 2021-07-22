@@ -239,7 +239,6 @@ def resize_flow(flow,
     return resized_flow
 
 
-# TODO: may write a cpp file
 def pixel_unshuffle(x, scale):
     """ Pixel unshuffle.
 
@@ -285,3 +284,101 @@ class DCNv2Pack(ModulatedDeformConvPack):
         return modulated_deform_conv(x, offset, mask, self.weight, self.bias,
                                      self.stride, self.padding, self.dilation,
                                      self.groups, self.deformable_groups)
+
+
+class Prediction(nn.Module):
+    """
+    Differentiable intra/inter prediction module of H264 codec
+    """
+    def __init__(self, search_size=21, block_size=4):
+        super(Prediction, self).__init__()
+        self.search_size = search_size
+        self.block_size = block_size
+
+    def forward(self, im1, im2, mode='inter', soft=True):
+        """
+        Args:
+            im1: [B, 1, H, W]  # neighbour frame
+            im2: [B, 1, H, W]  # reference frame
+            mode: 'inter' or 'intra'
+        Returns:
+            out: [B, 1, H, W]  # predicted frame
+        """
+        if mode == 'inter':
+            return self.inter_prediction(im1, im2, self.search_size, self.block_size, soft)
+        else:
+            return self.intra_prediction(im1, im2, self.search_size, self.block_size, soft)
+
+    @staticmethod
+    def intra_prediction(im1, im2, search_size, block_size=4, soft=True):
+        """
+        Perform intra-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im1_pad = F.pad(im1, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                if i == search_size // 2 and j == search_size // 2:
+                    continue
+                search_list.append(im1_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im1_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        nbr = torch.cat(search_list, dim=1)
+        if soft:
+            idx = F.softmax(-100 * vol, dim=1)
+        else:
+            idx = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2)
+        idx = idx.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+
+        out = torch.sum(idx * nbr, dim=1, keepdim=True)
+        return out
+
+    @staticmethod
+    def inter_prediction(im1, im2, search_size, block_size=4, soft=True):
+        """
+        Perform inter-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im2_pad = F.pad(im2, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                if i == search_size // 2 and j == search_size // 2:
+                    continue
+                search_list.append(im2_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im2_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        nbr = torch.cat(search_list, dim=1)
+        if soft:
+            idx = F.softmax(-100 * vol, dim=1)
+        else:
+            idx = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2)
+        idx = idx.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+
+        out = torch.sum(idx * nbr, dim=1, keepdim=True)
+        return out

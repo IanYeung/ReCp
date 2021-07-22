@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import torch
 
 from basicsr.archs import build_network
+from basicsr.archs.arch_util import Prediction
 from basicsr.utils.matlab_functions import bgr2ycbcr, ycbcr2bgr
 
 
@@ -72,28 +73,28 @@ if __name__ == '__main__':
     # out = net((inp, inp))
     # print(out.shape)
 
-    net = get_compressor().to(device)
-
-    block_size = 4
-    img = cv2.imread('/home/xiyang/Downloads/0100/im1.png')
-    ori_img = bgr2ycbcr(img, y_only=True)  # [H, W]
-    plt.imshow(ori_img, cmap='gray')
-    plt.title('Original Image')
-    plt.show()
-
-    ori_images = torch.from_numpy(ori_img).unsqueeze(dim=0).unsqueeze(dim=0).float()  # [B, 1, H, W]
-
-    com_images, likelihoods = net(ori_images, qp=10)  # [B, 1, H, W]
-
-    com_img = (com_images.detach().squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8).squeeze()  # [H, W]
-    plt.imshow(com_img, cmap='gray')
-    plt.title('Compressed Image')
-    plt.show()
-
-    print(np.mean(np.abs(com_img - ori_img)))
-    plt.imshow(np.abs(com_img - ori_img), cmap='gray')
-    plt.title('Difference Image')
-    plt.show()
+    # net = get_compressor().to(device)
+    #
+    # block_size = 4
+    # img = cv2.imread('/home/xiyang/Downloads/0100/im1.png')
+    # ori_img = bgr2ycbcr(img, y_only=True)  # [H, W]
+    # plt.imshow(ori_img, cmap='gray')
+    # plt.title('Original Image')
+    # plt.show()
+    #
+    # ori_images = torch.from_numpy(ori_img).unsqueeze(dim=0).unsqueeze(dim=0).float()  # [B, 1, H, W]
+    #
+    # com_images, likelihoods = net(ori_images, qp=10)  # [B, 1, H, W]
+    #
+    # com_img = (com_images.detach().squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8).squeeze()  # [H, W]
+    # plt.imshow(com_img, cmap='gray')
+    # plt.title('Compressed Image')
+    # plt.show()
+    #
+    # print(np.mean(np.abs(com_img - ori_img)))
+    # plt.imshow(np.abs(com_img - ori_img), cmap='gray')
+    # plt.title('Difference Image')
+    # plt.show()
 
     # net = get_compressor().to(device)
     #
@@ -111,3 +112,29 @@ if __name__ == '__main__':
     # plt.imshow(com_img)
     # plt.title('Compressed Image')
     # plt.show()
+
+    im1 = cv2.imread(filename='data/im1.png', flags=cv2.IMREAD_UNCHANGED) / 255.
+    im2 = cv2.imread(filename='data/im2.png', flags=cv2.IMREAD_UNCHANGED) / 255.
+
+    im1 = bgr2ycbcr(im1.astype(np.float32), y_only=True)
+    im2 = bgr2ycbcr(im2.astype(np.float32), y_only=True)
+
+    im1_tensor = torch.from_numpy(im1).unsqueeze(0).unsqueeze(0).to(device)
+    im2_tensor = torch.from_numpy(im2).unsqueeze(0).unsqueeze(0).to(device)
+
+    predict = Prediction(search_size=21, block_size=4).to(device)
+    # out_tensor = predict(im1_tensor, im2_tensor, mode='intra', soft=True)
+    out_tensor = predict(im1_tensor, im2_tensor, mode='inter', soft=True)
+    # out_tensor = Prediction.intra_prediction(im1_tensor, im2_tensor, search_size=21, block_size=4, soft=False)
+    # out_tensor = Prediction.inter_prediction(im1_tensor, im2_tensor, search_size=21, block_size=4, soft=False)
+    out = out_tensor.squeeze(0).squeeze(0).cpu().numpy()
+
+    plt.imshow(out, cmap='gray')
+    plt.show()
+
+    plt.imshow(im1, cmap='gray')
+    plt.show()
+
+    res = im1 - out
+    plt.imshow(np.abs(res), cmap='gray')
+    plt.show()
