@@ -701,9 +701,7 @@ class SingleFrameSRMultiQPModel(BaseModel):
         self.optimizer_a.zero_grad()
 
         self.output_sr = self.net_sr(self.lq)
-        qp = random.randint(15, 30)
-        self.output_cp, self.likehihoods = self.net_cp(self.output_sr * 255., qp=qp, training=True)
-        self.output_cp = self.output_cp / 255.
+        self.output_cp, self.likehihoods = self.net_cp(self.output_sr, qp=random.randint(15, 30), training=True)
 
         l_total = 0
         loss_dict = OrderedDict()
@@ -748,7 +746,7 @@ class SingleFrameSRMultiQPModel(BaseModel):
         self.optimizer_g.step()
         self.optimizer_c.step()
 
-        aux_loss = self.net_cp.aux_loss()
+        aux_loss = self.get_bare_model(self.net_cp).aux_loss()
         loss_dict['l_aux'] = aux_loss
         aux_loss.backward()
         self.optimizer_a.step()
@@ -760,8 +758,7 @@ class SingleFrameSRMultiQPModel(BaseModel):
         self.net_cp.eval()
         with torch.no_grad():
             self.output_sr = self.net_sr(self.lq)
-            self.output_cp, _ = self.net_cp(self.output_sr * 255., qp=20, training=False)
-            self.output_cp = self.output_cp / 255.
+            self.output_cp, _ = self.net_cp(self.output_sr, qp=20, training=False)
         self.net_sr.train()
         self.net_cp.train()
 
