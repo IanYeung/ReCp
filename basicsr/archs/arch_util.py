@@ -1,4 +1,5 @@
 import math
+import numpy as np
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
@@ -368,8 +369,6 @@ class Prediction(nn.Module):
         im2_pad = F.pad(im2, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
         for i in range(0, search_size):
             for j in range(0, search_size):
-                if i == search_size // 2 and j == search_size // 2:
-                    continue
                 search_list.append(im2_pad[:, :, i:i + H, j:j + W])
                 cost_volume.append(F.avg_pool2d(torch.abs(im1 - im2_pad[:, :, i:i + H, j:j + W]), block_size))
         vol = torch.cat(cost_volume, dim=1)
@@ -382,3 +381,289 @@ class Prediction(nn.Module):
 
         out = torch.sum(idx * nbr, dim=1, keepdim=True)
         return out
+
+    @staticmethod
+    def intra_prediction_ste(im1, im2, search_size, block_size=4):
+        """
+        Perform intra-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im1_pad = F.pad(im1, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                if i == search_size // 2 and j == search_size // 2:
+                    continue
+                search_list.append(im1_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im1_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        nbr = torch.cat(search_list, dim=1)
+        # implement argmin operation with straight through estimator
+        idx_onehot = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2) + \
+                     F.softmax(-100 * vol, dim=1).detach() - F.softmax(-100 * vol, dim=1)
+        idx_onehot_expanded = idx_onehot.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+        # select top 1 patch
+        out = torch.sum(idx_onehot_expanded * nbr, dim=1, keepdim=True)
+
+        pos = torch.arange(0, vol.shape[1]).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).to(im1.device)
+        pos_expanded = pos.expand(B, vol.shape[1], H // block_size, W // block_size)
+        idx_min = torch.sum(pos_expanded * idx_onehot, dim=1, keepdim=False)  # [B, H, W]
+        idx_u, idx_v = idx_min // search_size - pad_size, idx_min % search_size - pad_size
+        flow = torch.stack([idx_u, idx_v], dim=-1)  # [B, H, W, 2]
+
+        return out, flow
+
+    @staticmethod
+    def inter_prediction_ste(im1, im2, search_size, block_size=4):
+        """
+        Perform inter-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im2_pad = F.pad(im2, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                search_list.append(im2_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im2_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        nbr = torch.cat(search_list, dim=1)
+        # implement argmin operation with straight through estimator
+        idx_onehot = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2) + \
+                     F.softmax(-100 * vol, dim=1).detach() - F.softmax(-100 * vol, dim=1)
+        idx_onehot_expanded = idx_onehot.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+        # select top 1 patch
+        out = torch.sum(idx_onehot_expanded * nbr, dim=1, keepdim=True)
+
+        pos = torch.arange(0, vol.shape[1]).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).to(im1.device)
+        pos_expanded = pos.expand(B, vol.shape[1], H // block_size, W // block_size)
+        idx_min = torch.sum(pos_expanded * idx_onehot, dim=1, keepdim=False)  # [B, H, W]
+        idx_u, idx_v = idx_min // search_size - pad_size, idx_min % search_size - pad_size
+        flow = torch.stack([idx_u, idx_v], dim=-1)  # [B, H, W, 2]
+
+        return out, flow
+
+    @staticmethod
+    def intra_prediction_rgb(im1, im2, search_size, block_size=4, soft=True):
+        """
+        Perform intra-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im1_pad = F.pad(im1, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                if i == search_size // 2 and j == search_size // 2:
+                    continue
+                search_list.append(im1_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im1_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        vol = vol[:, 0::3, :, :] + vol[:, 1::3, :, :] + vol[:, 2::3, :, :]
+        nbr = torch.cat(search_list, dim=1)
+        if soft:
+            idx = F.softmax(-100 * vol, dim=1)
+        else:
+            idx = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2)
+        idx = idx.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+
+        out1 = torch.sum(idx * nbr[:, 0::3, :, :], dim=1, keepdim=True)
+        out2 = torch.sum(idx * nbr[:, 1::3, :, :], dim=1, keepdim=True)
+        out3 = torch.sum(idx * nbr[:, 2::3, :, :], dim=1, keepdim=True)
+        out = torch.cat([out1, out2, out3], dim=1)
+        return out
+
+    @staticmethod
+    def inter_prediction_rgb(im1, im2, search_size, block_size=4, soft=True):
+        """
+        Perform inter-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im2_pad = F.pad(im2, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                search_list.append(im2_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im2_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        vol = vol[:, 0::3, :, :] + vol[:, 1::3, :, :] + vol[:, 2::3, :, :]
+        nbr = torch.cat(search_list, dim=1)
+        if soft:
+            idx = F.softmax(-100 * vol, dim=1)
+        else:
+            idx = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2)
+        idx = idx.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+
+        out1 = torch.sum(idx * nbr[:, 0::3, :, :], dim=1, keepdim=True)
+        out2 = torch.sum(idx * nbr[:, 1::3, :, :], dim=1, keepdim=True)
+        out3 = torch.sum(idx * nbr[:, 2::3, :, :], dim=1, keepdim=True)
+        out = torch.cat([out1, out2, out3], dim=1)
+        return out
+
+    @staticmethod
+    def intra_prediction_ste_rgb(im1, im2, search_size, block_size=4):
+        """
+        Perform intra-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im1_pad = F.pad(im1, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                if i == search_size // 2 and j == search_size // 2:
+                    continue
+                search_list.append(im1_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im1_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        vol = vol[:, 0::3, :, :] + vol[:, 1::3, :, :] + vol[:, 2::3, :, :]
+        nbr = torch.cat(search_list, dim=1)
+        # implement argmin operation with straight through estimator
+        idx_onehot = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2) + \
+                     F.softmax(-100 * vol, dim=1).detach() - F.softmax(-100 * vol, dim=1)
+        idx_onehot_expanded = idx_onehot.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+        # select top 1 patch
+        out1 = torch.sum(idx_onehot_expanded * nbr[:, 0::3, :, :], dim=1, keepdim=True)
+        out2 = torch.sum(idx_onehot_expanded * nbr[:, 1::3, :, :], dim=1, keepdim=True)
+        out3 = torch.sum(idx_onehot_expanded * nbr[:, 2::3, :, :], dim=1, keepdim=True)
+        out = torch.cat([out1, out2, out3], dim=1)
+
+        pos = torch.arange(0, vol.shape[1]).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).to(im1.device)
+        pos_expanded = pos.expand(B, vol.shape[1], H // block_size, W // block_size)
+        idx_min = torch.sum(pos_expanded * idx_onehot, dim=1, keepdim=False)  # [B, H, W]
+        idx_u, idx_v = idx_min // search_size - pad_size, idx_min % search_size - pad_size
+        flow = torch.stack([idx_u, idx_v], dim=-1)  # [B, H, W, 2]
+
+        return out, flow
+
+    @staticmethod
+    def inter_prediction_ste_rgb(im1, im2, search_size, block_size=4):
+        """
+        Perform inter-frame prediction as in H264 codec
+        Args:
+            im1: Tensor of size [B, 1, H, W]
+            im2: Tensor of size [B, 1, H, W]
+            block_size: int
+            search_size: int
+            soft: True/False
+
+        Returns:
+            out: Tensor of size [B, 1, H, W]
+        """
+        B, C, H, W = im1.shape
+        cost_volume = []
+        search_list = []
+
+        pad_size = search_size // 2
+        im2_pad = F.pad(im2, (pad_size, pad_size, pad_size, pad_size), mode='constant', value=0)
+        for i in range(0, search_size):
+            for j in range(0, search_size):
+                search_list.append(im2_pad[:, :, i:i + H, j:j + W])
+                cost_volume.append(F.avg_pool2d(torch.abs(im1 - im2_pad[:, :, i:i + H, j:j + W]), block_size))
+        vol = torch.cat(cost_volume, dim=1)
+        vol = vol[:, 0::3, :, :] + vol[:, 1::3, :, :] + vol[:, 2::3, :, :]
+        nbr = torch.cat(search_list, dim=1)
+        # implement argmin operation with straight through estimator
+        idx_onehot = F.one_hot(torch.argmin(vol, dim=1), num_classes=vol.shape[1]).permute(0, 3, 1, 2) + \
+                     F.softmax(-100 * vol, dim=1).detach() - F.softmax(-100 * vol, dim=1)
+        idx_onehot_expanded = idx_onehot.repeat_interleave(block_size, dim=2).repeat_interleave(block_size, dim=3)
+        # select top 1 patch
+        out1 = torch.sum(idx_onehot_expanded * nbr[:, 0::3, :, :], dim=1, keepdim=True)
+        out2 = torch.sum(idx_onehot_expanded * nbr[:, 1::3, :, :], dim=1, keepdim=True)
+        out3 = torch.sum(idx_onehot_expanded * nbr[:, 2::3, :, :], dim=1, keepdim=True)
+        out = torch.cat([out1, out2, out3], dim=1)
+
+        pos = torch.arange(0, vol.shape[1]).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).to(im1.device)
+        pos_expanded = pos.expand(B, vol.shape[1], H // block_size, W // block_size)
+        idx_min = torch.sum(pos_expanded * idx_onehot, dim=1, keepdim=False)  # [B, H, W]
+        idx_u, idx_v = idx_min // search_size - pad_size, idx_min % search_size - pad_size
+        flow = torch.stack([idx_u, idx_v], dim=-1)  # [B, H, W, 2]
+
+        return out, flow
+
+
+class Rescaler:
+    """
+    Tensor Rescaling
+    """
+    def __init__(self):
+        self.min, self.max = None, None
+
+    def fwd_rescale_pt(self, tensor):
+        self.min, self.max = torch.min(tensor), torch.max(tensor)
+        rescaled_tensor = (tensor - self.min) / (self.max - self.min)
+        return rescaled_tensor
+
+    def bwd_rescale_pt(self, tensor):
+        rescaled_tensor = tensor * (self.max - self.min) + self.min
+        return rescaled_tensor
+
+    def fwd_rescale_np(self, tensor):
+        self.min, self.max = np.min(tensor), np.max(tensor)
+        rescaled_tensor = (tensor - self.min) / (self.max - self.min)
+        return rescaled_tensor
+
+    def bwd_rescale_np(self, tensor):
+        rescaled_tensor = tensor * (self.max - self.min) + self.min
+        return rescaled_tensor
+
+
+if __name__ == '__main__':
+    pass
