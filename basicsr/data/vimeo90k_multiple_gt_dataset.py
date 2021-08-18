@@ -241,7 +241,7 @@ class Vimeo90KMultipleGTValidDataset(data.Dataset):
 
 
 @DATASET_REGISTRY.register()
-class Vimeo90KTwoFrameTrainDataset(data.Dataset):
+class Vimeo90KDoubleFrameTrainDataset(data.Dataset):
     """Vimeo90K dataset for training.
 
     The keys are generated from a meta info txt file.
@@ -273,7 +273,7 @@ class Vimeo90KTwoFrameTrainDataset(data.Dataset):
     """
 
     def __init__(self, opt):
-        super(Vimeo90KTwoFrameTrainDataset, self).__init__()
+        super(Vimeo90KDoubleFrameTrainDataset, self).__init__()
         self.opt = opt
         self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(opt['dataroot_lq'])
 
@@ -345,7 +345,7 @@ class Vimeo90KTwoFrameTrainDataset(data.Dataset):
 
 
 @DATASET_REGISTRY.register()
-class Vimeo90KTwoFrameValidDataset(data.Dataset):
+class Vimeo90KDoubleFrameValidDataset(data.Dataset):
     """Vimeo90K dataset for training.
 
     The keys are generated from a meta info txt file.
@@ -372,7 +372,7 @@ class Vimeo90KTwoFrameValidDataset(data.Dataset):
     """
 
     def __init__(self, opt):
-        super(Vimeo90KTwoFrameValidDataset, self).__init__()
+        super(Vimeo90KDoubleFrameValidDataset, self).__init__()
         self.opt = opt
         self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(opt['dataroot_lq'])
 
