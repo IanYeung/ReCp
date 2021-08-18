@@ -1,6 +1,6 @@
 # general settings
-name: 001_MSRResNet_BIC_x2_Vimeo90k_250k_crf28
-model_type: SingleFrameSRCompressModel
+name: 001_MSRResNet_FrameCompressor_x2_Vimeo90k_250k_ratio_1.0_1.0
+model_type: SingleFrameSRMultiQPModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
 manual_seed: 0
@@ -9,9 +9,9 @@ manual_seed: 0
 datasets:
   train:
     name: Vimeo90K
-    type: Vimeo90KSingleFrameTrainDataset
-    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
-    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
+    type: Vimeo90KSingleFrameYChannelTrainDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_y/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_y_BIx2/sequences
     dataroot_flow: ~
     meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_train_GT.txt
     io_backend:
@@ -24,15 +24,15 @@ datasets:
     # data loader
     use_shuffle: true
     num_worker_per_gpu: 3
-    batch_size_per_gpu: 32
+    batch_size_per_gpu: 4
     dataset_enlarge_ratio: 200
     prefetch_mode: ~
 
   val:
     name: Vimeo90K
-    type: Vimeo90KSingleFrameValidDataset
-    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
-    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
+    type: Vimeo90KSingleFrameYChannelValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_y/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_y_BIx2/sequences
     dataroot_flow: ~
     meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
     io_backend:
@@ -41,23 +41,26 @@ datasets:
 # network structures
 network_sr:
   type: MSRResNet
-  num_in_ch: 3
-  num_out_ch: 3
+  num_in_ch: 1
+  num_out_ch: 1
   num_feat: 64
   num_block: 16
   upscale: 2
 network_cp:
-  type: BIC
-  nf: 64
-  num_in_ch: 3
-  num_out_ch: 3
+  type: FrameCompressor
+  num_ch: 1
+  block_size: 4
+
+prediction:
+  block_size: 4
+  search_size: 21
 
 # path
 path:
-  pretrain_network_sr: experiments/001_MSRResNet_x2_f64b16_Vimeo90k_500k_B16G1_wandb/models/net_g_00500000.pth
-  strict_load_sr: true
-  pretrain_network_cp: experiments/001_BIC_Vimeo90k_300k_crf28/models/net_g_latest.pth
-  strict_load_cp: true
+  pretrain_network_sr: ~
+  strict_load_sr: false
+  pretrain_network_cp: ~
+  strict_load_cp: false
   resume_state: ~
 
 # training settings
@@ -67,6 +70,18 @@ train:
     lr: !!float 1e-4
     weight_decay: 0
     betas: [0.9, 0.99]
+  optim_c:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+  optim_a:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  color: Y
 
   scheduler:
     type: CosineAnnealingRestartLR
@@ -79,13 +94,16 @@ train:
 
   # losses
   pixel_opt_sr:
-    type: L1Loss
-    loss_weight: 0.1
-    reduction: mean
+    type: FidelityLoss
+    loss_weight_l1loss: 0.2
+    loss_weight_msssim: 0.8
   pixel_opt_cp:
-    type: L1Loss
-    loss_weight: 1.0
-    reduction: mean
+    type: FidelityLoss
+    loss_weight_l1loss: 0.2
+    loss_weight_msssim: 0.8
+  rate_opt:
+    type: RateLoss
+    loss_weight: 0.001
 
 # validation settings
 val:

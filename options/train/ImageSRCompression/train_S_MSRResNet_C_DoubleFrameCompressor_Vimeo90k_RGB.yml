@@ -1,27 +1,23 @@
 # general settings
-name: BasicVSR_FSTRN_x2_msssim_nf64nb10_Vimeo90k_250k_crf19
-model_type: MultiFrameSRCompressModel
+name: 001_MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_RGB_ratio_1.0_1.0_inter
+model_type: DoubleFrameSRMultiQPModel
 scale: 2
-num_gpu: 2  # set num_gpu: 0 for cpu mode
-manual_seed: 10
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 0
 
 # dataset and data loader settings
 datasets:
   train:
     name: Vimeo90K
-    type: Vimeo90KMultipleGTTrainDataset
+    type: Vimeo90KDoubleFrameTrainDataset
     dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
     dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
-#    dataroot_gt: /home/xiyang/Datasets/Vimeo90k/vimeo_septuplet/sequences
-#    dataroot_lq: /home/xiyang/Datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
     dataroot_flow: ~
     meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_train_GT.txt
     io_backend:
       type: disk
 
-    num_frame: 7
     gt_size: 192
-    random_reverse: true
     use_flip: true
     use_rot: true
 
@@ -34,41 +30,50 @@ datasets:
 
   val:
     name: Vimeo90K
-    type: Vimeo90KMultipleGTValidDataset
+    type: Vimeo90KDoubleFrameValidDataset
     dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet/sequences
     dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
-#    dataroot_gt: /home/xiyang/Datasets/Vimeo90k/vimeo_septuplet/sequences
-#    dataroot_lq: /home/xiyang/Datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img/sequences
     dataroot_flow: ~
     meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
     io_backend:
       type: disk
 
-    num_frame: 7
-
 # network structures
 network_sr:
-  type: BasicVSR
+  type: MSRResNet
+  num_in_ch: 3
+  num_out_ch: 3
   num_feat: 64
-  num_block: 10
-  scale: 2
-  spynet_path: ~
+  num_block: 16
+  upscale: 2
 network_cp:
-  type: FSTRN
-  ks: 3
-  nf: 64
+  type: DoubleFrameCompressor
+  num_ch: 3
+  search_size: 21
+  block_size: 4
+  color: RGB
 
 # path
 path:
-  pretrain_network_sr: experiments/BasicVSR_x2_nf64nb10_Vimeo90k_250k/models/net_g_latest.pth
-  strict_load_sr: true
-  pretrain_network_cp: experiments/001_VideoCompressor_FSTRN_Vimeo90k_250k_crf19/models/net_g_latest.pth
-  strict_load_cp: true
+  pretrain_network_sr: ~
+  strict_load_sr: false
+  pretrain_network_cp: ~
+  strict_load_cp: false
   resume_state: ~
 
 # training settings
 train:
   optim_g:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+  optim_c:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+  optim_a:
     type: Adam
     lr: !!float 1e-4
     weight_decay: 0
@@ -82,26 +87,19 @@ train:
 
   total_iter: 250000
   warmup_iter: -1  # no warm up
-  fix_iter: 0
-  spynet_lr_mul: 0.1
 
   # losses
-#  pixel_opt_sr:
-#    type: MSELoss
-#    loss_weight: 0.1
-#    reduction: mean
-  ssim_opt_sr:
-    type: MSSSIMLoss
-    loss_weight: 0.1
-    channels: 3
-#  pixel_opt_cp:
-#    type: MSELoss
-#    loss_weight: 1.0
-#    reduction: mean
-  ssim_opt_cp:
-    type: MSSSIMLoss
-    loss_weight: 1.0
-    channels: 3
+  pixel_opt_sr:
+    type: FidelityLoss
+    loss_weight_l1loss: 0.2
+    loss_weight_msssim: 0.8
+  pixel_opt_cp:
+    type: FidelityLoss
+    loss_weight_l1loss: 0.2
+    loss_weight_msssim: 0.8
+  rate_opt:
+    type: RateLoss
+    loss_weight: 0.001
 
 # validation settings
 val:
@@ -111,7 +109,7 @@ val:
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 0
+      crop_border: 2
       test_y_channel: false
 
 # logging settings
@@ -127,5 +125,3 @@ logger:
 dist_params:
   backend: nccl
   port: 29500
-
-find_unused_parameters: true
