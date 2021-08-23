@@ -14,7 +14,7 @@ from os import path as osp
 from scipy.io import loadmat
 
 
-VIDEO_EXTENSIONS = ['.mp4', '.MP4', '.mkv', '.MKV', '.mpg', '.MPG', '.mxf', '.MXF']
+VIDEO_EXTENSIONS = ['.mp4', '.MP4', '.mkv', '.MKV', '.mpg', '.MPG', '.mxf', '.MXF', '.y4m', '.Y4M']
 
 
 def is_video_file(filename):
@@ -90,6 +90,101 @@ def decode_frames_with_ffmpeg(video_path, image_path):
 
     process.wait()
     print('total {} frames'.format(k - 1))
+
+
+def process(inp_video, out_video, params):
+
+    # open video
+    if is_video_file(inp_video):
+        print('---------------' * 4)
+        print('Opening video [{}]'.format(inp_video))
+        cap = cv2.VideoCapture(inp_video)
+        assert cap.isOpened(), '[{}] is a illegal input!'.format(inp_video)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        iw = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        ih = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+    else:
+        raise NotImplementedError('Please input a video file!')
+
+    # set target attribute
+    mode = params['mode']
+    fps = '%.02f' % fps
+
+    ow = iw // params['down_scale']
+    oh = ih // params['down_scale']
+
+    # use ffmpeg-python
+    reader = (ffmpeg
+              .input(inp_video)
+              .output('pipe:', format='rawvideo', pix_fmt='yuv420p')
+              .run_async(pipe_stdout=True))
+
+    if mode == 'bitrate':
+        bitrate = '%dk' % params['bitrate']
+        writer = (ffmpeg.input('pipe:', format='rawvideo', pix_fmt='yuv420p',
+                               s='{}x{}'.format(ow, oh), r=fps)
+                  .output(out_video, vcodec='libx264', pix_fmt='yuv420p',
+                          s='{}x{}'.format(ow, oh), video_bitrate=bitrate, r=fps)
+                  .overwrite_output()
+                  .run_async(pipe_stdin=True)
+                  )
+    elif mode == 'crf':
+        crf = params['crf']
+        writer = (ffmpeg.input('pipe:', format='rawvideo', pix_fmt='yuv420p',
+                               s='{}x{}'.format(ow, oh), r=fps)
+                  .output(out_video, vcodec='libx264', pix_fmt='yuv420p',
+                          s='{}x{}'.format(ow, oh), crf=crf, r=fps)
+                  .overwrite_output()
+                  .run_async(pipe_stdin=True)
+                  )
+    elif mode == 'qp':
+        qp = params['qp']
+        writer = (ffmpeg.input('pipe:', format='rawvideo', pix_fmt='yuv420p',
+                               s='{}x{}'.format(ow, oh), r=fps)
+                  .output(out_video, vcodec='libx264', pix_fmt='yuv420p',
+                          s='{}x{}'.format(ow, oh), qp=qp, r=fps)
+                  .overwrite_output()
+                  .run_async(pipe_stdin=True)
+                  )
+    else:
+        raise ValueError('Mode {} has not been implemented.'.format(mode))
+
+    # processing
+    t1 = time.time()
+
+    while True:
+        # read a video frame
+        in_bytes_Y = reader.stdout.read(iw * ih)
+        in_bytes_U = reader.stdout.read(iw // params['down_scale'] * ih // params['down_scale'])
+        in_bytes_V = reader.stdout.read(iw // params['down_scale'] * ih // params['down_scale'])
+        if not in_bytes_Y:
+            print('Finished reading video.')
+            break
+        Y = (np.frombuffer(in_bytes_Y, np.uint8).reshape([ih, iw]))
+        U = (np.frombuffer(in_bytes_U, np.uint8).reshape([ih // params['down_scale'], iw // params['down_scale']]))
+        V = (np.frombuffer(in_bytes_V, np.uint8).reshape([ih // params['down_scale'], iw // params['down_scale']]))
+
+        # degradation on a frame
+        Y = resizer.imresize(Y, scale_factor=1.0 / params['down_scale'], output_shape=None, kernel='cubic',
+                             antialiasing=True, kernel_shift_flag=False)
+        U = resizer.imresize(U, scale_factor=1.0 / params['down_scale'], output_shape=None, kernel='cubic',
+                             antialiasing=True, kernel_shift_flag=False)
+        V = resizer.imresize(V, scale_factor=1.0 / params['down_scale'], output_shape=None, kernel='cubic',
+                             antialiasing=True, kernel_shift_flag=False)
+
+        # write output to target video
+        Y, U, V = Y.astype(np.uint8), U.astype(np.uint8), V.astype(np.uint8)
+        writer.stdin.write(Y.tobytes())
+        writer.stdin.write(U.tobytes())
+        writer.stdin.write(V.tobytes())
+
+    reader.stdout.close()
+    writer.stdin.close()
+    writer.wait()
+    t2 = time.time()
+
+    print('Finished saving video [{}], cost timg: {:.2f}s'.format(out_video, (t2 - t1)))
 
 
 class VideoDegrader(object):
@@ -198,12 +293,13 @@ class VideoDegrader(object):
         else:
             down_type = self.deg_params['down_type']
             if down_type == 'ffmpeg':
-                print('{}X downsample and mpeg compression with ffmpeg'.format(scale))
+                # print('{}X downsample and mpeg compression with ffmpeg'.format(scale))
+                pass
             elif down_type == 'cv_cubic':
-                print('{}X down-sample with cv2 bicubic'.format(scale))
+                # print('{}X down-sample with cv2 bicubic'.format(scale))
                 img = cv2.resize(img, (img.shape[1] // scale, img.shape[0] // scale), cv2.INTER_CUBIC)
             elif down_type == 'mat_cubic':
-                print('{}X down-sample with matlab bicubic'.format(scale))
+                # print('{}X down-sample with matlab bicubic'.format(scale))
                 img = resizer.imresize(img, scale_factor=1.0 / scale, output_shape=None, kernel='cubic',
                                        antialiasing=True, kernel_shift_flag=False)
             else:
@@ -318,8 +414,6 @@ class VideoDegrader(object):
 
             # degradation on a frame
             deg_frame = self.deg_image(frame)
-            # deg_frame = deg_frame[:, :, [2, 1, 0]]  # BGR2RGB
-
             # write output to target video
             writer.stdin.write(deg_frame.astype(np.uint8).tobytes())
 
@@ -335,75 +429,78 @@ class VideoDegrader(object):
 
 
 if __name__ == "__main__":
+
     vid = VideoDegrader()
 
     # # randomly degradation (Alibaba-SR)
     # vid.process('tmp/01RedSea_1920x800_20M-001_1.mp4', 'tmp/out.mp4')
     # print(vid.get_params())
 
-    # fixed degradation (Vimeo90K)
-    scale = 1
-    mode = 'crf'
-    quality = 33
-    params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
-              'is_noise': False, 'noise_sigma': 5.0,
-              'down_type': 'mat_cubic', 'down_scale': scale,
-              'mode': mode, 'bitrate': quality, 'crf': quality, 'qp': quality}
-
-    # read_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_enh/sequences'
-    # save_root_mp4 = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_com_{mode}{quality}_mp4/sequences'
-    # save_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_com_{mode}{quality}_img/sequences'
-
-    # exp_name = '001_MSRResNet_x2_f64b16_Vimeo90k_250k_B16G1_wandb'
-    # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf23'
-    exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf28'
-    # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf23'
-    # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf28'
-
-    read_root_img = f'/home/xiyang/Datasets/ReCp/results/{exp_name}/visualization/Vimeo90K'
-    save_root_mp4 = f'/home/xiyang/Datasets/ReCp/results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_video'
-    save_root_img = f'/home/xiyang/Datasets/ReCp/results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_frame'
-
-    folder_list = [osp.basename(folder) for folder in sorted(glob.glob(osp.join(read_root_img, '*')))]
-    for folder in folder_list:
-        # encode
-        seq_path_list = sorted(glob.glob(osp.join(read_root_img, folder, '*')))
-        mkdir(osp.join(save_root_mp4, folder))
-        for seq_path in seq_path_list:
-            seq_name = osp.basename(seq_path)
-            vid.process(seq_path, osp.join(save_root_mp4, folder, '{}.mp4'.format(seq_name)), params=params)
-            print(vid.get_params())
-        # decode
-        seq_path_list = sorted(glob.glob(osp.join(save_root_mp4, folder, '*')))
-        mkdir(osp.join(save_root_img, folder))
-        for seq_path in seq_path_list:
-            seq_name = osp.basename(seq_path).split('.')[0]
-            print('Processing: {}'.format(seq_name))
-            frm_path = osp.join(save_root_img, folder, seq_name)
-            mkdir(frm_path)
-            decode_frames_with_ffmpeg(seq_path, frm_path)
-
-    # # fixed degradation (SPMCS)
-    # scale = 2
-    # qp = 32
-    # params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
-    #           'is_noise': False, 'noise_sigma': 5.0,
-    #           'down_type': 'mat_cubic', 'down_scale': scale,
-    #           'mode': 'crf', 'bitrate': 200, 'crf': 23, 'qp': qp}
+    # # fixed degradation (Vimeo90K)
+    # scale = 1
+    # mode = 'crf'
+    # for quality in [19, 23, 27, 31]:
+    #     params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
+    #               'is_noise': False, 'noise_sigma': 5.0,
+    #               'down_type': 'mat_cubic', 'down_scale': scale,
+    #               'mode': mode, 'bitrate': quality, 'crf': quality, 'qp': quality}
     #
-    # root = '/home/xiyang/Datasets/SPMCS'
+    #     # read_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_all_enh/sequences'
+    #     # save_root_mp4 = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_all_com_{mode}{quality}_mp4/sequences'
+    #     # save_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_all_com_{mode}{quality}_img/sequences'
     #
-    # seq_list = sorted(glob.glob(osp.join(root, '*')))
-    # for seq in seq_list:
-    #     # encode
-    #     seq_name = osp.basename(seq)
-    #     print('Processing: {}'.format(seq_name))
-    #     read_root_img = osp.join(root, seq_name, 'GT')
-    #     save_path_mp4 = osp.join(root, seq_name, '{}.mp4'.format(seq_name))
-    #     vid.process(read_root_img, save_path_mp4, params=params)
-    #     print(vid.get_params())
-    #     # decode
-    #     save_root_img = osp.join(root, seq_name, 'BIX{}_compressed_img'.format(scale))
-    #     mkdir(save_root_img)
-    #     decode_frames_with_ffmpeg(save_path_mp4, save_root_img)
+    #     # # exp_name = '001_MSRResNet_x2_f64b16_Vimeo90k_250k_B16G1_wandb'
+    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf18'
+    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf23'
+    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf28'
+    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf33'
+    #     # # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf23'
+    #     # # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf28'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf19'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf23'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf27'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf31'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf19_msssim'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf23_msssim'
+    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf27_msssim'
+    #     # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf31_msssim'
+    #     #
+    #     # read_root_img = f'/home/xiyang/data0/datasets/ReCp/vsr_results/{exp_name}/visualization/Vimeo90K'
+    #     # save_root_mp4 = f'/home/xiyang/data0/datasets/ReCp/vsr_results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_video'
+    #     # save_root_img = f'/home/xiyang/data0/datasets/ReCp/vsr_results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_frame'
+    #
+    #     exp_name = 'MSRResNet_x2_Joint_Vimeo90k_250k_RGB_inter_0.0_1.0'
+    #     read_root_img = f'/home/xiyang/data0/datasets/ReCp/mqp_results/{exp_name}/Vimeo90k'
+    #     save_root_mp4 = f'/home/xiyang/data0/datasets/ReCp/mqp_results/{exp_name}/Vimeo90k_{mode}{quality}_video'
+    #     save_root_img = f'/home/xiyang/data0/datasets/ReCp/mqp_results/{exp_name}/Vimeo90k_{mode}{quality}_frame'
+    #
+    #     folder_list = [osp.basename(folder) for folder in sorted(glob.glob(osp.join(read_root_img, '*')))]
+    #     # folder_list = [folder for folder in folder_list if folder == '00028']
+    #     for folder in folder_list:
+    #         # encode
+    #         seq_path_list = sorted(glob.glob(osp.join(read_root_img, folder, '*')))
+    #         mkdir(osp.join(save_root_mp4, folder))
+    #         for seq_path in seq_path_list:
+    #             seq_name = osp.basename(seq_path)
+    #             vid.process(seq_path, osp.join(save_root_mp4, folder, '{}.mp4'.format(seq_name)), params=params)
+    #             print(vid.get_params())
+    #         # decode
+    #         seq_path_list = sorted(glob.glob(osp.join(save_root_mp4, folder, '*')))
+    #         mkdir(osp.join(save_root_img, folder))
+    #         for seq_path in seq_path_list:
+    #             seq_name = osp.basename(seq_path).split('.')[0]
+    #             print('Processing: {}'.format(seq_name))
+    #             frm_path = osp.join(save_root_img, folder, seq_name)
+    #             mkdir(frm_path)
+    #             decode_frames_with_ffmpeg(seq_path, frm_path)
 
+    # video folder (y4m/mp4)
+    params = {'down_type': 'mat_cubic', 'down_scale': 2, 'mode': 'crf', 'crf': 23}
+    video_src_root = '/home/xiyang/Datasets/MCL-JVC/720P'
+    video_dst_root = '/home/xiyang/Datasets/MCL-JVC/360P-MP4-DS'
+    mkdir(video_dst_root)
+    inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
+    for inp_video_path in inp_video_list:
+        out_video_path = osp.join(video_dst_root, osp.basename(inp_video_path).replace('.y4m', '.mp4'))
+        process(inp_video_path, out_video_path, params=params)
