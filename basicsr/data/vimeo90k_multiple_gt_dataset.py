@@ -1,4 +1,6 @@
 import random
+
+import numpy as np
 import torch
 from pathlib import Path
 from torch.utils import data as data
@@ -100,7 +102,9 @@ class Vimeo90KMultipleGTTrainDataset(data.Dataset):
             else:
                 img_gt_path = self.gt_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_gt_path, 'gt')
-            img_gt = imfrombytes(img_bytes, float32=True)
+            img_gt = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_gt.ndim == 2:
+                img_gt = np.expand_dims(img_gt, axis=-1)
             img_gts.append(img_gt)
 
         # get the neighboring LQ frames
@@ -111,7 +115,9 @@ class Vimeo90KMultipleGTTrainDataset(data.Dataset):
             else:
                 img_lq_path = self.lq_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_lq_path, 'lq')
-            img_lq = imfrombytes(img_bytes, float32=True)
+            img_lq = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_lq.ndim == 2:
+                img_lq = np.expand_dims(img_lq, axis=-1)
             img_lqs.append(img_lq)
 
         # randomly crop
@@ -210,7 +216,9 @@ class Vimeo90KMultipleGTValidDataset(data.Dataset):
             else:
                 img_gt_path = self.gt_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_gt_path, 'gt')
-            img_gt = imfrombytes(img_bytes, float32=True)
+            img_gt = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_gt.ndim == 2:
+                img_gt = np.expand_dims(img_gt, axis=-1)
             img_gts.append(img_gt)
 
         # get the neighboring LQ frames
@@ -221,7 +229,9 @@ class Vimeo90KMultipleGTValidDataset(data.Dataset):
             else:
                 img_lq_path = self.lq_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_lq_path, 'lq')
-            img_lq = imfrombytes(img_bytes, float32=True)
+            img_lq = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_lq.ndim == 2:
+                img_lq = np.expand_dims(img_lq, axis=-1)
             img_lqs.append(img_lq)
 
         # augmentation - flip, rotate
@@ -310,7 +320,9 @@ class Vimeo90KDoubleFrameTrainDataset(data.Dataset):
             else:
                 img_gt_path = self.gt_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_gt_path, 'gt')
-            img_gt = imfrombytes(img_bytes, float32=True)
+            img_gt = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_gt.ndim == 2:
+                img_gt = np.expand_dims(img_gt, axis=-1)
             img_gts.append(img_gt)
 
         # get the neighboring LQ frames
@@ -321,7 +333,9 @@ class Vimeo90KDoubleFrameTrainDataset(data.Dataset):
             else:
                 img_lq_path = self.lq_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_lq_path, 'lq')
-            img_lq = imfrombytes(img_bytes, float32=True)
+            img_lq = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_lq.ndim == 2:
+                img_lq = np.expand_dims(img_lq, axis=-1)
             img_lqs.append(img_lq)
 
         # randomly crop
@@ -407,7 +421,9 @@ class Vimeo90KDoubleFrameValidDataset(data.Dataset):
             else:
                 img_gt_path = self.gt_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_gt_path, 'gt')
-            img_gt = imfrombytes(img_bytes, float32=True)
+            img_gt = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_gt.ndim == 2:
+                img_gt = np.expand_dims(img_gt, axis=-1)
             img_gts.append(img_gt)
 
         # get the neighboring LQ frames
@@ -418,7 +434,9 @@ class Vimeo90KDoubleFrameValidDataset(data.Dataset):
             else:
                 img_lq_path = self.lq_root / clip / seq / f'im{neighbor}.png'
             img_bytes = self.file_client.get(img_lq_path, 'lq')
-            img_lq = imfrombytes(img_bytes, float32=True)
+            img_lq = imfrombytes(img_bytes, flag='unchanged', float32=True)
+            if img_lq.ndim == 2:
+                img_lq = np.expand_dims(img_lq, axis=-1)
             img_lqs.append(img_lq)
 
         # augmentation - flip, rotate
