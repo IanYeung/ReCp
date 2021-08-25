@@ -1,5 +1,5 @@
 # general settings
-name: 001_MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_RGB_ratio_1.0_1.0_inter
+name: 001_MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_RGB_ratio_0.1_1.0_inter
 model_type: DoubleFrameSRMultiQPModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -91,8 +91,8 @@ train:
   # losses
   pixel_opt_sr:
     type: FidelityLoss
-    loss_weight_l1loss: 0.2
-    loss_weight_msssim: 0.8
+    loss_weight_l1loss: 0.02
+    loss_weight_msssim: 0.08
   pixel_opt_cp:
     type: FidelityLoss
     loss_weight_l1loss: 0.2

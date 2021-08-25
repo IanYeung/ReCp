@@ -1,0 +1,127 @@
+# general settings
+name: 001_MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_0.0_1.0_mix
+model_type: DoubleFrameSRMultiQPModel
+scale: 2
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 0
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: Vimeo90K
+    type: Vimeo90KDoubleFrameTrainDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_y/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img_y/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_train_GT.txt
+    io_backend:
+      type: disk
+
+    gt_size: 192
+    use_flip: true
+    use_rot: true
+
+    # data loader
+    use_shuffle: true
+    num_worker_per_gpu: 3
+    batch_size_per_gpu: 8
+    dataset_enlarge_ratio: 200
+    prefetch_mode: ~
+
+  val:
+    name: Vimeo90K
+    type: Vimeo90KDoubleFrameValidDataset
+    dataroot_gt: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_y/sequences
+    dataroot_lq: /data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_crf23_img_y/sequences
+    dataroot_flow: ~
+    meta_info_file: basicsr/data/meta_info/meta_info_Vimeo90K_valid_GT.txt
+    io_backend:
+      type: disk
+
+# network structures
+network_sr:
+  type: MSRResNet
+  num_in_ch: 1
+  num_out_ch: 1
+  num_feat: 64
+  num_block: 16
+  upscale: 2
+network_cp:
+  type: DoubleFrameCompressor
+  num_ch: 1
+  search_size: 21
+  block_size: 4
+  color: Y
+
+# path
+path:
+  pretrain_network_sr: ~
+  strict_load_sr: false
+  pretrain_network_cp: ~
+  strict_load_cp: false
+  resume_state: ~
+
+# training settings
+train:
+  optim_g:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+  optim_c:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+  optim_a:
+    type: Adam
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: CosineAnnealingRestartLR
+    periods: [250000]
+    restart_weights: [1]
+    eta_min: !!float 1e-7
+
+  total_iter: 250000
+  warmup_iter: -1  # no warm up
+
+  # losses
+  pixel_opt_sr:
+    type: FidelityLoss
+    loss_weight_l1loss: 0.0
+    loss_weight_msssim: 0.0
+  pixel_opt_cp:
+    type: FidelityLoss
+    loss_weight_l1loss: 0.2
+    loss_weight_msssim: 0.8
+  rate_opt:
+    type: RateLoss
+    loss_weight: 0.001
+
+# validation settings
+val:
+  val_freq: !!float 1e4
+  save_img: true
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 2
+      test_y_channel: false
+
+# logging settings
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 5e4
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+# dist training settings
+dist_params:
+  backend: nccl
+  port: 29500
