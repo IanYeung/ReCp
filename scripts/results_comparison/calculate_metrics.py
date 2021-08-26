@@ -47,7 +47,13 @@ def calculate_metrics(src_video_root, dst_video_root, logger=None):
 
     if logger:
         logger.info('-----------------------------------------------------------------')
+        logger.info(src_video_root)
+        logger.info(dst_video_root)
+        logger.info('-----------------------------------------------------------------')
     else:
+        print('-----------------------------------------------------------------')
+        print(src_video_root)
+        print(dst_video_root)
         print('-----------------------------------------------------------------')
 
     for idx, (src_video_path, dst_video_path) in enumerate(zip(src_video_paths, dst_video_paths)):
@@ -110,6 +116,16 @@ def get_video_metadata(inp_video_path):
 def get_bitrate(src_root, logger=None):
     src_video_paths = sorted(glob.glob(os.path.join(src_root, '*.mp4')))
     avg_kbps = 0.
+
+    if logger:
+        logger.info('-----------------------------------------------------------------')
+        logger.info(src_root)
+        logger.info('-----------------------------------------------------------------')
+    else:
+        print('-----------------------------------------------------------------')
+        print(src_root)
+        print('-----------------------------------------------------------------')
+
     for src_video_path in src_video_paths:
         src_video_name = os.path.basename(src_video_path)
         kbps = get_video_metadata(src_video_path)
@@ -119,7 +135,8 @@ def get_bitrate(src_root, logger=None):
         else:
             print('{}:\t {:.3f} kbps'.format(src_video_name, kbps))
     if logger:
-        pass
+        logger.info('------------------------------')
+        logger.info('Average bitrate {:.3f} kbps'.format(avg_kbps))
     else:
         print('------------------------------')
         print('Average bitrate {:.3f} kbps'.format(avg_kbps))
@@ -139,8 +156,8 @@ def save_bitrate_info(src_root, dst_root):
 def evaluate(model, crf_list):
     # metrics
     log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/metrics/{}.log'.format(model)
-    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
-    logger = logging.getLogger('base')
+    setup_logger('metrics', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('metrics')
     psnr_list, ssim_list, vmaf_list = list(), list(), list()
     for crf in crf_list:
         gt_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-MP4'
@@ -155,8 +172,8 @@ def evaluate(model, crf_list):
 
     # bitrate
     log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/bitrate/{}.log'.format(model)
-    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
-    logger = logging.getLogger('base')
+    setup_logger('bitrate', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('bitrate')
     kbps_list = list()
     for crf in crf_list:
         lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
@@ -175,8 +192,8 @@ if __name__ == '__main__':
 
     # metrics
     log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/metrics/{}.log'.format(model)
-    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
-    logger = logging.getLogger('base')
+    setup_logger('metrics', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('metrics')
     psnr_list, ssim_list, vmaf_list = list(), list(), list()
     for crf in crf_list:
         gt_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-MP4'
@@ -191,11 +208,11 @@ if __name__ == '__main__':
 
     # bitrate
     log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/bitrate/{}.log'.format(model)
-    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
-    logger = logging.getLogger('base')
+    setup_logger('bitrate', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('bitrate')
     kbps_list = list()
     for crf in crf_list:
         lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
         kbps = get_bitrate(lq_video_root, logger)
         kbps_list.append(kbps)
-    print('PSNR list: ', kbps_list)
+    print('kbps list: ', kbps_list)
