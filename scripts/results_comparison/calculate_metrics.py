@@ -5,6 +5,7 @@ import glob
 import json
 import time
 import shlex
+import logging
 import subprocess
 
 import matplotlib.pyplot as plt
@@ -19,12 +20,23 @@ from basicsr.utils import mkdir
 from ffmpeg_quality_metrics import FfmpegQualityMetrics as ffqm
 
 
-def calculate_metrics():
-    src_video_root = '/home/xiyang/Datasets/MCL-JVC/360P-MP4-SR-CRF28'
-    dst_video_root = '/home/xiyang/Datasets/MCL-JVC/720P-MP4'
+def setup_logger(logger_name, log_file, level=logging.INFO, screen=False, tofile=False):
+    """set up logger"""
+    lg = logging.getLogger(logger_name)
+    formatter = logging.Formatter('%(asctime)s.%(msecs)03d - %(levelname)s: %(message)s',
+                                  datefmt='%y-%m-%d %H:%M:%S')
+    lg.setLevel(level)
+    if tofile:
+        fh = logging.FileHandler(log_file, mode='w')
+        fh.setFormatter(formatter)
+        lg.addHandler(fh)
+    if screen:
+        sh = logging.StreamHandler()
+        sh.setFormatter(formatter)
+        lg.addHandler(sh)
 
-    # src_video_path = os.path.join(src_video_root, 'videoSRC01_1280x720_30_x2.mp4')
-    # dst_video_path = os.path.join(dst_video_root, 'videoSRC01_1280x720_30.mp4')
+
+def calculate_metrics(src_video_root, dst_video_root, logger=None):
 
     src_video_paths = sorted(glob.glob(os.path.join(src_video_root, '*')))
     dst_video_paths = sorted(glob.glob(os.path.join(dst_video_root, '*')))
@@ -32,6 +44,11 @@ def calculate_metrics():
     assert len(src_video_paths) == len(dst_video_paths)
 
     avg_psnr_y, avg_ssim_y, avg_vmaf = 0., 0., 0.
+
+    if logger:
+        logger.info('-----------------------------------------------------------------')
+    else:
+        print('-----------------------------------------------------------------')
 
     for idx, (src_video_path, dst_video_path) in enumerate(zip(src_video_paths, dst_video_paths)):
         # print('src path: {}'.format(src_video_path))
@@ -51,49 +68,65 @@ def calculate_metrics():
         avg_ssim_y += seq_avg_ssim_y / len(src_video_paths)
         avg_vmaf += seq_avg_vmaf / len(src_video_paths)
 
-        print('Idx {:02d}:\t PNSR-Y: {:.2f}, SSIM-Y: {:.4f}, VMAF: {:.2f}'
-              .format(idx + 1, seq_avg_psnr_y, seq_avg_ssim_y, seq_avg_vmaf))
+        if logger:
+            logger.info('Sequence {:03d}:\t PNSR-Y: {:.2f}, SSIM-Y: {:.4f}, VMAF: {:.2f}'
+                        .format(idx + 1, seq_avg_psnr_y, seq_avg_ssim_y, seq_avg_vmaf))
+        else:
+            print('Sequence {:03d}:\t PNSR-Y: {:.2f}, SSIM-Y: {:.4f}, VMAF: {:.2f}'
+                  .format(idx + 1, seq_avg_psnr_y, seq_avg_ssim_y, seq_avg_vmaf))
 
-    print('---------------' * 4)
-    print('PNSR-Y: {:.2f}, SSIM-Y: {:.4f}, VMAF: {:.2f}'.format(avg_psnr_y, avg_ssim_y, avg_vmaf))
+    if logger:
+        logger.info('-------------------------Average Results-------------------------')
+        logger.info('PNSR-Y: {:.2f}, SSIM-Y: {:.4f}, VMAF: {:.2f}'.format(avg_psnr_y, avg_ssim_y, avg_vmaf))
+    else:
+        print('-------------------------Average Results-------------------------')
+        print('PNSR-Y: {:.2f}, SSIM-Y: {:.4f}, VMAF: {:.2f}'.format(avg_psnr_y, avg_ssim_y, avg_vmaf))
+
+    return avg_psnr_y, avg_ssim_y, avg_vmaf
 
 
-def getVideoMetadata(pathToInputVideo):
+def get_video_metadata(inp_video_path):
     cmd = "ffprobe -v quiet -print_format json -show_streams"
     args = shlex.split(cmd)
-    args.append(pathToInputVideo)
+    args.append(inp_video_path)
 
     # run the ffprobe process, decode stdout into utf-8 & convert to JSON
-    ffprobeOutput = subprocess.check_output(args).decode('utf-8')
-    ffprobeOutput = json.loads(ffprobeOutput)
+    ffprobe_output = subprocess.check_output(args).decode('utf-8')
+    ffprobe_output = json.loads(ffprobe_output)
 
     # # prints all the metadata available:
     # import pprint
     # pp = pprint.PrettyPrinter(indent=2)
-    # pp.pprint(ffprobeOutput)
+    # pp.pprint(ffprobe_output)
     #
-    # h = ffprobeOutput['streams'][0]['height']
-    # w = ffprobeOutput['streams'][0]['width']
+    # h = ffprobe_output['streams'][0]['height']
+    # w = ffprobe_output['streams'][0]['width']
 
-    kbps = float(ffprobeOutput['streams'][0]['bit_rate']) / 1000
+    kbps = float(ffprobe_output['streams'][0]['bit_rate']) / 1000
 
     return kbps
 
 
-def get_bitrate(src_root='/home/xiyang/Datasets/MCL-JVC/720P-MP4'):
+def get_bitrate(src_root, logger=None):
     src_video_paths = sorted(glob.glob(os.path.join(src_root, '*.mp4')))
     avg_kbps = 0.
     for src_video_path in src_video_paths:
         src_video_name = os.path.basename(src_video_path)
-        kbps = getVideoMetadata(pathToInputVideo=src_video_path)
-        avg_kbps += kbps
-        print('{}:\t {:.3f} kbps'.format(src_video_name, kbps))
-    print('---------------' * 2)
-    print('Average bitrate {:.3f} kbps'.format(avg_kbps / len(src_video_paths)))
+        kbps = get_video_metadata(src_video_path)
+        avg_kbps += kbps / len(src_video_paths)
+        if logger:
+            logger.info('{}:\t {:.3f} kbps'.format(src_video_name, kbps))
+        else:
+            print('{}:\t {:.3f} kbps'.format(src_video_name, kbps))
+    if logger:
+        pass
+    else:
+        print('------------------------------')
+        print('Average bitrate {:.3f} kbps'.format(avg_kbps))
+    return avg_kbps
 
 
-def save_bitrate_info(src_root='/home/xiyang/Datasets/MCL-JVC/720P-MP4',
-                      dst_root='/home/xiyang/Datasets/MCL-JVC/720P-JSON'):
+def save_bitrate_info(src_root, dst_root):
     mkdir(dst_root)
     src_video_paths = sorted(glob.glob(os.path.join(src_root, '*.mp4')))
     for src_video_path in src_video_paths:
@@ -103,7 +136,66 @@ def save_bitrate_info(src_root='/home/xiyang/Datasets/MCL-JVC/720P-MP4',
         os.system(command=command)
 
 
+def evaluate(model, crf_list):
+    # metrics
+    log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/metrics/{}.log'.format(model)
+    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('base')
+    psnr_list, ssim_list, vmaf_list = list(), list(), list()
+    for crf in crf_list:
+        gt_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-MP4'
+        lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
+        psnr, ssim, vmaf = calculate_metrics(gt_video_root, lq_video_root, logger)
+        psnr_list.append(psnr)
+        ssim_list.append(ssim)
+        vmaf_list.append(vmaf)
+    print('PSNR list: ', psnr_list)
+    print('SSIM list: ', ssim_list)
+    print('VMAF list: ', vmaf_list)
+
+    # bitrate
+    log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/bitrate/{}.log'.format(model)
+    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('base')
+    kbps_list = list()
+    for crf in crf_list:
+        lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
+        kbps = get_bitrate(lq_video_root, logger)
+        kbps_list.append(kbps)
+    print('PSNR list: ', kbps_list)
+
+
 if __name__ == '__main__':
-    # calculate_metrics()
-    get_bitrate()
-    # save_bitrate_info()
+
+    # model = 'MSRResNet_x2_Vimeo90k_250k_Y'
+    # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_0.1_1.0_mix'
+    model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_1.0_1.0_mix'
+
+    crf_list = [18, 22, 26, 30, 34, 38, 42]
+
+    # metrics
+    log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/metrics/{}.log'.format(model)
+    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('base')
+    psnr_list, ssim_list, vmaf_list = list(), list(), list()
+    for crf in crf_list:
+        gt_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-MP4'
+        lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
+        psnr, ssim, vmaf = calculate_metrics(gt_video_root, lq_video_root, logger)
+        psnr_list.append(psnr)
+        ssim_list.append(ssim)
+        vmaf_list.append(vmaf)
+    print('PSNR list: ', psnr_list)
+    print('SSIM list: ', ssim_list)
+    print('VMAF list: ', vmaf_list)
+
+    # bitrate
+    log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/bitrate/{}.log'.format(model)
+    setup_logger('base', log_path, level=logging.INFO, screen=True, tofile=True)
+    logger = logging.getLogger('base')
+    kbps_list = list()
+    for crf in crf_list:
+        lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
+        kbps = get_bitrate(lq_video_root, logger)
+        kbps_list.append(kbps)
+    print('PSNR list: ', kbps_list)
