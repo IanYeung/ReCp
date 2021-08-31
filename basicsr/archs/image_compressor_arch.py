@@ -153,7 +153,7 @@ class BIC(nn.Module):
         hid = self.encoder(inp)
         out = self.decoder(hid)
         if self.color_space == 'ycbcr':
-            out = rgb2ycbcr(out)
+            out = ycbcr2rgb(out)
         return out
 
 
@@ -396,9 +396,10 @@ class SingleFrameCompressor(CompressionModel):
 
     def forward_residual(self, ori_images, qp, training=False):
 
-        self.C_f4, self.C_i4, self.S_f4, self.S_i4 = \
-            self.C_f4.to(ori_images.device), self.C_i4.to(ori_images.device), \
-            self.S_f4.to(ori_images.device), self.S_i4.to(ori_images.device)
+        self.C_f4 = self.C_f4.to(ori_images.device)
+        self.C_i4 = self.C_i4.to(ori_images.device)
+        self.S_f4 = self.S_f4.to(ori_images.device)
+        self.S_i4 = self.S_i4.to(ori_images.device)
 
         B, C, H, W = ori_images.shape
 
@@ -523,9 +524,10 @@ class DoubleFrameCompressor(CompressionModel):
 
     def forward_residual(self, ori_images, qp, training=False):
 
-        self.C_f4, self.C_i4, self.S_f4, self.S_i4 = \
-            self.C_f4.to(ori_images.device), self.C_i4.to(ori_images.device), \
-            self.S_f4.to(ori_images.device), self.S_i4.to(ori_images.device)
+        self.C_f4 = self.C_f4.to(ori_images.device)
+        self.C_i4 = self.C_i4.to(ori_images.device)
+        self.S_f4 = self.S_f4.to(ori_images.device)
+        self.S_i4 = self.S_i4.to(ori_images.device)
 
         B, C, H, W = ori_images.shape
 
