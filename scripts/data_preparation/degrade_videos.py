@@ -26,41 +26,12 @@ def mkdir(path):
         os.makedirs(path)
 
 
-# def encode_frames_with_ffmpeg(src_path, dst_path, crf, fps=25, start_number=1, vframes=1000):
-#     command = 'ffmpeg -r {} -f image2 -start_number {} -i {} -vframes {} -vcodec libx265 ' \
-#               '-vf fps={} -crf {} -pix_fmt yuv420p -an {} -y &>/dev/null'\
-#         .format(fps, start_number, src_path, vframes, fps, crf, dst_path)
-#     print('doing... ' + command)
-#     os.system(command)
-
-
-def encode_frames_with_ffmpeg(src_path, dst_path, mode='crf'):
-    if mode == 'crf':
-        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -crf 23 {}'.format(src_path, dst_path)
-        print(command)
-        os.system(command)
-    elif mode == 'cqp':
-        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -crf 23 {}'.format(src_path, dst_path)
-        print(command)
-        os.system(command)
-    elif mode == 'abr':
-        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -b:v 400k {}'.format(src_path, dst_path)
-        print(command)
-        os.system(command)
-    elif mode == 'vbr':
-        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -b:v 400k -pass 1 -f null /dev/null'.format(src_path)
-        print(command)
-        os.system(command)
-        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -pix_fmt yuv420p -b:v 400k -pass 2 {}'.format(src_path, dst_path)
-        print(command)
-        os.system(command)
-    elif mode == 'cbr':
-        command = 'ffmpeg -r 25 -f image2 -i {} -c:v libx264 -x264-params "nal-hrd=cbr:force-cfr=1" ' \
-                  '-b:v 1M -minrate 1M -maxrate 1M -bufsize 2M {}'.format(src_path, dst_path)
-        print(command)
-        os.system(command)
-    else:
-        raise ValueError()
+def encode_frames_with_ffmpeg(src_path, dst_path, crf, fps=25, start_number=1, vframes=1000):
+    command = 'ffmpeg -r {} -f image2 -start_number {} -i {} -vframes {} -vcodec libx265 ' \
+              '-vf fps={} -crf {} -pix_fmt yuv420p -an {} -y &>/dev/null'\
+        .format(fps, start_number, src_path, vframes, fps, crf, dst_path)
+    print('doing... ' + command)
+    os.system(command)
 
 
 def decode_frames_with_ffmpeg(video_path, image_path):
@@ -90,6 +61,22 @@ def decode_frames_with_ffmpeg(video_path, image_path):
 
     process.wait()
     print('total {} frames'.format(k - 1))
+
+
+def compress_h264(inp_video, out_video, params):
+    command = 'ffmpeg -y -i {} -vf scale={}x{}:flags=lanczos -c:v libx264 ' \
+              '-profile:v high -threads 4 -preset veryslow -crf {} -refs 5 -g 150 ' \
+              '-tune ssim -x264opts ssim=1 -keyint_min 150 -sc_threshold 0 -f mp4 ' \
+              '{}'.format(inp_video, params['W'], params['H'], params['crf'], out_video)
+    print(command)
+    os.system(command)
+
+
+def lossless_h264(inp_video, out_video):
+    command = 'ffmpeg -y -i {} -c:v libx264 -preset veryslow -crf 0 ' \
+              '{}'.format(inp_video, out_video)
+    print(command)
+    os.system(command)
 
 
 def process(inp_video, out_video, params):
@@ -165,6 +152,7 @@ def process(inp_video, out_video, params):
         U = (np.frombuffer(in_bytes_U, np.uint8).reshape([ih // params['down_scale'], iw // params['down_scale']]))
         V = (np.frombuffer(in_bytes_V, np.uint8).reshape([ih // params['down_scale'], iw // params['down_scale']]))
 
+        Y, U, V = Y / 255., U / 255., V / 255.
         # degradation on a frame
         Y = resizer.imresize(Y, scale_factor=1.0 / params['down_scale'], output_shape=None, kernel='cubic',
                              antialiasing=True, kernel_shift_flag=False)
@@ -173,6 +161,7 @@ def process(inp_video, out_video, params):
         V = resizer.imresize(V, scale_factor=1.0 / params['down_scale'], output_shape=None, kernel='cubic',
                              antialiasing=True, kernel_shift_flag=False)
 
+        Y, U, V = (np.clip(Y, 0, 1) * 255.0).round(), (np.clip(U, 0, 1) * 255.0).round(), (np.clip(V, 0, 1) * 255.0).round()
         # write output to target video
         Y, U, V = Y.astype(np.uint8), U.astype(np.uint8), V.astype(np.uint8)
         writer.stdin.write(Y.tobytes())
@@ -495,12 +484,29 @@ if __name__ == "__main__":
     #             mkdir(frm_path)
     #             decode_frames_with_ffmpeg(seq_path, frm_path)
 
-    # video folder (y4m/mp4)
-    params = {'down_type': 'mat_cubic', 'down_scale': 2, 'mode': 'crf', 'crf': 23}
-    video_src_root = '/home/xiyang/Datasets/MCL-JVC/720P'
-    video_dst_root = '/home/xiyang/Datasets/MCL-JVC/360P-MP4-DS'
-    mkdir(video_dst_root)
-    inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
-    for inp_video_path in inp_video_list:
-        out_video_path = osp.join(video_dst_root, osp.basename(inp_video_path).replace('.y4m', '.mp4'))
-        process(inp_video_path, out_video_path, params=params)
+    # # video folder (y4m/mp4)
+    # params = {'down_type': 'mat_cubic', 'down_scale': 2, 'mode': 'crf', 'crf': 23}
+    # video_src_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-Y4M'
+    # video_dst_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/360P-MP4'
+    # # video_src_root = '/home/xiyang/data0/datasets/ReCp/VQEG/videos-original/VQEG-1080P-Y4M'
+    # # video_dst_root = '/home/xiyang/data0/datasets/ReCp/VQEG/videos-original/VQEG-540P-MP4'
+    # mkdir(video_dst_root)
+    # inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
+    # for inp_video_path in inp_video_list:
+    #     out_video_path = osp.join(video_dst_root, os.path.basename(inp_video_path).replace('.y4m', '.mp4'))
+    #     process(inp_video_path, out_video_path, params=params)
+
+    # model = 'MSRResNet_x2_Vimeo90k_250k_Y'
+    # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_1.0_1.0_mix'
+    model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_sr1.0_cp1.0_rate0.01_mix'
+
+    crf_list = [18, 22, 26, 30, 34, 38, 42]
+    for crf in crf_list:
+        params = {'W': 1280, 'H': 720, 'crf': crf}
+        video_src_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/360P-Y4M-SR-{}'.format(model)
+        video_dst_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, params['crf'])
+        mkdir(video_dst_root)
+        inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
+        for inp_video_path in inp_video_list:
+            out_video_path = osp.join(video_dst_root, os.path.basename(inp_video_path).replace('.y4m', '.mp4'))
+            compress_h264(inp_video_path, out_video_path, params=params)
