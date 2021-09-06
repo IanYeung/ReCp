@@ -493,25 +493,29 @@ class DoubleFrameCompressor(CompressionModel):
         for i in range(self.block_size * self.block_size):
             setattr(self, 'entropy_bottleneck_{:02d}'.format(i), EntropyBottleneck(num_ch))
 
-    def forward(self, curr_frame, prev_frame, qp, training=False, mode='inter'):
+    def forward(self, curr_frame, prev_frame, qp, training=False, mode='inter', beta=100):
         if mode == 'inter':
             if self.color == 'RGB':
                 predicted, flow = Prediction.inter_prediction_ste_rgb(curr_frame, prev_frame,
                                                                       search_size=self.search_size,
-                                                                      block_size=self.block_size)
+                                                                      block_size=self.block_size,
+                                                                      beta=beta)
             else:
-                predicted, flow = Prediction.inter_prediction_ste(curr_frame, prev_frame,
-                                                                  search_size=self.search_size,
-                                                                  block_size=self.block_size)
+                predicted, flow = Prediction.inter_prediction_ste_y(curr_frame, prev_frame,
+                                                                    search_size=self.search_size,
+                                                                    block_size=self.block_size,
+                                                                    beta=beta)
         else:
             if self.color == 'RGB':
                 predicted, flow = Prediction.intra_prediction_ste_rgb(curr_frame, curr_frame,
                                                                       search_size=self.search_size,
-                                                                      block_size=self.block_size)
+                                                                      block_size=self.block_size,
+                                                                      beta=beta)
             else:
-                predicted, flow = Prediction.intra_prediction_ste(curr_frame, curr_frame,
-                                                                  search_size=self.search_size,
-                                                                  block_size=self.block_size)
+                predicted, flow = Prediction.intra_prediction_ste_y(curr_frame, curr_frame,
+                                                                    search_size=self.search_size,
+                                                                    block_size=self.block_size,
+                                                                    beta=beta)
         residual = curr_frame - predicted
         residual = self.rescaler.fwd_rescale_pt(residual) * 255.
 
@@ -557,7 +561,7 @@ class DoubleFrameCompressor(CompressionModel):
 
         # backward transform
         C_i4, S_i4 = self.C_i4, self.S_i4
-        Z = torch.round(C_i4.transpose(-1, -2) @ (Y_h * S_i4) @ C_i4)
+        Z = C_i4.transpose(-1, -2) @ (Y_h * S_i4) @ C_i4
 
         com_images = deblockify(Z, size=(H, W))  # [B, C, H, W]
         return com_images, likehihood_list
