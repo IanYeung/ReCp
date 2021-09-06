@@ -735,8 +735,9 @@ class DoubleFrameSRMultiQPModel(BaseModel):
         self.prev_frame_sr = self.net_sr(self.prev_frame_lq)
         self.curr_frame_sr = self.net_sr(self.curr_frame_lq)
 
+        mode = 'intra' if current_iter % 150 == 0 else 'inter'
         self.curr_frame_cp, self.flow, self.likehihoods = \
-            self.net_cp(self.curr_frame_sr, self.prev_frame_sr, qp=random.randint(15, 30), training=True)
+            self.net_cp(self.curr_frame_sr, self.prev_frame_sr, qp=random.randint(15, 30), training=True, mode=mode)
 
         l_total = 0
         loss_dict = OrderedDict()
@@ -799,7 +800,7 @@ class DoubleFrameSRMultiQPModel(BaseModel):
             self.curr_frame_sr = self.net_sr(self.curr_frame_lq)
 
             self.curr_frame_cp, _, _ = \
-                self.net_cp(self.curr_frame_sr, self.prev_frame_sr, qp=20, training=True)
+                self.net_cp(self.curr_frame_sr, self.prev_frame_sr, qp=20, training=False)
         self.net_sr.train()
         self.net_cp.train()
 
