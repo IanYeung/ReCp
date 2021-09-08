@@ -800,7 +800,7 @@ class DoubleFrameSRMultiQPModel(BaseModel):
             self.curr_frame_sr = self.net_sr(self.curr_frame_lq)
 
             self.curr_frame_cp, _, _ = \
-                self.net_cp(self.curr_frame_sr, self.prev_frame_sr, qp=20, training=False)
+                self.get_bare_model(self.net_cp)(self.curr_frame_sr, self.prev_frame_sr, qp=20, training=False)
         self.net_sr.train()
         self.net_cp.train()
 
