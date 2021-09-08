@@ -417,96 +417,82 @@ class VideoDegrader(object):
         return self.deg_params
 
 
-if __name__ == "__main__":
-
+def degrade_vimeo90k(root='/data2/yangxi/datasets/Vimeo90k', name='vimeo_septuplet_BIx2_h264_crf23_img_SRx2'):
     vid = VideoDegrader()
 
-    # # randomly degradation (Alibaba-SR)
-    # vid.process('tmp/01RedSea_1920x800_20M-001_1.mp4', 'tmp/out.mp4')
-    # print(vid.get_params())
+    # fixed degradation (Vimeo90K)
+    scale = 1
+    mode = 'crf'
+    for quality in [18, 22, 26, 30]:
+        params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
+                  'is_noise': False, 'noise_sigma': 5.0,
+                  'down_type': 'mat_cubic', 'down_scale': scale,
+                  'mode': mode, 'bitrate': quality, 'crf': quality, 'qp': quality}
 
-    # # fixed degradation (Vimeo90K)
-    # scale = 1
-    # mode = 'crf'
-    # for quality in [19, 23, 27, 31]:
-    #     params = {'is_blur': False, 'blur_type': 'gaussian', 'blur_size': 9, 'blur_sigma': 5,
-    #               'is_noise': False, 'noise_sigma': 5.0,
-    #               'down_type': 'mat_cubic', 'down_scale': scale,
-    #               'mode': mode, 'bitrate': quality, 'crf': quality, 'qp': quality}
-    #
-    #     # read_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_all_enh/sequences'
-    #     # save_root_mp4 = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_all_com_{mode}{quality}_mp4/sequences'
-    #     # save_root_img = f'/data2/yangxi/datasets/Vimeo90k/vimeo_septuplet_BIx2_h264_all_com_{mode}{quality}_img/sequences'
-    #
-    #     # # exp_name = '001_MSRResNet_x2_f64b16_Vimeo90k_250k_B16G1_wandb'
-    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf18'
-    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf23'
-    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf28'
-    #     # # exp_name = '001_MSRResNet_EncoderDecoder_x2_Vimeo90k_250k_crf33'
-    #     # # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf23'
-    #     # # exp_name = '001_MSRResNet_BIC_x2_Vimeo90k_250k_crf28'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf19'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf23'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf27'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf31'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf19_msssim'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf23_msssim'
-    #     # # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf27_msssim'
-    #     # exp_name = 'BasicVSR_x2_nf64nb10_Vimeo90k_250k_crf31_msssim'
-    #     #
-    #     # read_root_img = f'/home/xiyang/data0/datasets/ReCp/vsr_results/{exp_name}/visualization/Vimeo90K'
-    #     # save_root_mp4 = f'/home/xiyang/data0/datasets/ReCp/vsr_results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_video'
-    #     # save_root_img = f'/home/xiyang/data0/datasets/ReCp/vsr_results/{exp_name}/visualization/Vimeo90k_{mode}{quality}_frame'
-    #
-    #     exp_name = 'MSRResNet_x2_Joint_Vimeo90k_250k_RGB_inter_0.0_1.0'
-    #     read_root_img = f'/home/xiyang/data0/datasets/ReCp/mqp_results/{exp_name}/Vimeo90k'
-    #     save_root_mp4 = f'/home/xiyang/data0/datasets/ReCp/mqp_results/{exp_name}/Vimeo90k_{mode}{quality}_video'
-    #     save_root_img = f'/home/xiyang/data0/datasets/ReCp/mqp_results/{exp_name}/Vimeo90k_{mode}{quality}_frame'
-    #
-    #     folder_list = [osp.basename(folder) for folder in sorted(glob.glob(osp.join(read_root_img, '*')))]
-    #     # folder_list = [folder for folder in folder_list if folder == '00028']
-    #     for folder in folder_list:
-    #         # encode
-    #         seq_path_list = sorted(glob.glob(osp.join(read_root_img, folder, '*')))
-    #         mkdir(osp.join(save_root_mp4, folder))
-    #         for seq_path in seq_path_list:
-    #             seq_name = osp.basename(seq_path)
-    #             vid.process(seq_path, osp.join(save_root_mp4, folder, '{}.mp4'.format(seq_name)), params=params)
-    #             print(vid.get_params())
-    #         # decode
-    #         seq_path_list = sorted(glob.glob(osp.join(save_root_mp4, folder, '*')))
-    #         mkdir(osp.join(save_root_img, folder))
-    #         for seq_path in seq_path_list:
-    #             seq_name = osp.basename(seq_path).split('.')[0]
-    #             print('Processing: {}'.format(seq_name))
-    #             frm_path = osp.join(save_root_img, folder, seq_name)
-    #             mkdir(frm_path)
-    #             decode_frames_with_ffmpeg(seq_path, frm_path)
+        read_root_img = os.path.join(root, '{}'.format(name), 'sequences')
+        save_root_mp4 = os.path.join(root, '{}_{}{}_mp4'.format(name, mode, quality), 'sequences')
+        save_root_img = os.path.join(root, '{}_{}{}_img'.format(name, mode, quality), 'sequences')
 
-    # # video folder (y4m/mp4)
-    # params = {'down_type': 'mat_cubic', 'down_scale': 2, 'mode': 'crf', 'crf': 23}
-    # video_src_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-Y4M'
-    # video_dst_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/360P-MP4'
-    # # video_src_root = '/home/xiyang/data0/datasets/ReCp/VQEG/videos-original/VQEG-1080P-Y4M'
-    # # video_dst_root = '/home/xiyang/data0/datasets/ReCp/VQEG/videos-original/VQEG-540P-MP4'
-    # mkdir(video_dst_root)
-    # inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
-    # for inp_video_path in inp_video_list:
-    #     out_video_path = osp.join(video_dst_root, os.path.basename(inp_video_path).replace('.y4m', '.mp4'))
-    #     process(inp_video_path, out_video_path, params=params)
+        folder_list = [osp.basename(folder) for folder in sorted(glob.glob(osp.join(read_root_img, '*')))]
+        # folder_list = [folder for folder in folder_list if folder == '00028']
 
+        for folder in folder_list:
+            # encode
+            seq_path_list = sorted(glob.glob(osp.join(read_root_img, folder, '*')))
+            mkdir(osp.join(save_root_mp4, folder))
+            for seq_path in seq_path_list:
+                seq_name = osp.basename(seq_path)
+                vid.process(seq_path, osp.join(save_root_mp4, folder, '{}.mp4'.format(seq_name)), params=params)
+                print(vid.get_params())
+            # # decode
+            # seq_path_list = sorted(glob.glob(osp.join(save_root_mp4, folder, '*')))
+            # mkdir(osp.join(save_root_img, folder))
+            # for seq_path in seq_path_list:
+            #     seq_name = osp.basename(seq_path).split('.')[0]
+            #     print('Processing: {}'.format(seq_name))
+            #     frm_path = osp.join(save_root_img, folder, seq_name)
+            #     mkdir(frm_path)
+            #     decode_frames_with_ffmpeg(seq_path, frm_path)
+
+
+def degrade_mcl_jvc():
+    # video folder (y4m/mp4)
+    params = {'down_type': 'mat_cubic', 'down_scale': 2, 'mode': 'crf', 'crf': 23}
+    video_src_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-Y4M'
+    video_dst_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/360P-MP4'
+    # video_src_root = '/home/xiyang/data0/datasets/ReCp/VQEG/videos-original/VQEG-1080P-Y4M'
+    # video_dst_root = '/home/xiyang/data0/datasets/ReCp/VQEG/videos-original/VQEG-540P-MP4'
+    mkdir(video_dst_root)
+    inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
+    for inp_video_path in inp_video_list:
+        out_video_path = osp.join(video_dst_root, os.path.basename(inp_video_path).replace('.y4m', '.mp4'))
+        process(inp_video_path, out_video_path, params=params)
+
+
+def compress_mcl_jvc(root='/home/xiyang/data0/datasets/ReCp/MCL-JVC'):
     # model = 'MSRResNet_x2_Vimeo90k_250k_Y'
     # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_1.0_1.0_mix'
-    model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_sr1.0_cp1.0_rate0.01_mix'
+    # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_sr1.0_cp1.0_rate0.01_mix'
+    # model = 'PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.001_mix'
+    model = 'PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.005_mix'
 
     crf_list = [18, 22, 26, 30, 34, 38, 42]
     for crf in crf_list:
         params = {'W': 1280, 'H': 720, 'crf': crf}
-        video_src_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/360P-Y4M-SR-{}'.format(model)
-        video_dst_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, params['crf'])
+        # video_src_root = os.path.join(root, 'videos-original/720P-Y4M-{}'.format(model))
+        # video_dst_root = os.path.join(root, 'videos-compress/{}/CRF{}'.format(model, params['crf']))
+        video_src_root = os.path.join(root, 'videos-original/720P-Y4M')
+        video_dst_root = os.path.join(root, 'videos-compress/{}/CRF{}'.format('Baseline', params['crf']))
         mkdir(video_dst_root)
         inp_video_list = sorted(glob.glob(os.path.join(video_src_root, '*')))
         for inp_video_path in inp_video_list:
             out_video_path = osp.join(video_dst_root, os.path.basename(inp_video_path).replace('.y4m', '.mp4'))
             compress_h264(inp_video_path, out_video_path, params=params)
+
+
+if __name__ == "__main__":
+    # root = '/data2/yangxi/datasets/Vimeo90k'
+    # name = 'vimeo_septuplet_BIx2_h264_crf23_img_SRx2'
+    # degrade_vimeo90k(root, name)
+
+    compress_mcl_jvc()
