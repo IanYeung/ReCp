@@ -370,6 +370,8 @@ class SingleFrameCompressor(CompressionModel):
         self.color = color
 
         self.rescaler = Rescaler()
+        self.min = None
+        self.max = None
 
         # Entropy Bottleneck
         for i in range(self.block_size * self.block_size):
@@ -381,15 +383,21 @@ class SingleFrameCompressor(CompressionModel):
                                                                search_size=self.search_size,
                                                                block_size=self.block_size)
         else:
-            predicted, _ = Prediction.intra_prediction_ste(ori_images, ori_images,
-                                                           search_size=self.search_size,
-                                                           block_size=self.block_size)
+            predicted, _ = Prediction.intra_prediction_ste_y(ori_images, ori_images,
+                                                             search_size=self.search_size,
+                                                             block_size=self.block_size)
         residual = ori_images - predicted
-        residual = self.rescaler.fwd_rescale_pt(residual) * 255.
+
+        # rescale residual image to [0, 255]
+        # residual = self.rescaler.fwd_rescale_pt(residual) * 255.0
+        self.min, self.max = torch.min(residual), torch.max(residual)
+        residual = (residual - self.min) / (self.max - self.min) * 255.0
 
         residual, likehihood_list = self.forward_residual(residual, qp, training)
 
-        residual = self.rescaler.bwd_rescale_pt(residual / 255.)
+        # rescale residual image back
+        # residual = self.rescaler.bwd_rescale_pt(residual / 255.0)
+        residual = (residual * (self.max - self.min) + self.min) / 255.0
         com_images = predicted + residual
 
         return com_images, likehihood_list
@@ -488,6 +496,8 @@ class DoubleFrameCompressor(CompressionModel):
         self.color = color
 
         self.rescaler = Rescaler()
+        self.min = None
+        self.max = None
 
         # Entropy Bottleneck
         for i in range(self.block_size * self.block_size):
@@ -517,11 +527,18 @@ class DoubleFrameCompressor(CompressionModel):
                                                                     block_size=self.block_size,
                                                                     beta=beta)
         residual = curr_frame - predicted
-        residual = self.rescaler.fwd_rescale_pt(residual) * 255.
+
+        # rescale residual image to [0, 255]
+        # residual = self.rescaler.fwd_rescale_pt(residual) * 255.0
+        self.min, self.max = torch.min(residual), torch.max(residual)
+        residual = (residual - self.min) / (self.max - self.min) * 255.0
 
         residual, likehihood_list = self.forward_residual(residual, qp, training)
 
-        residual = self.rescaler.bwd_rescale_pt(residual / 255.)
+        # rescale residual image back
+        # residual = self.rescaler.bwd_rescale_pt(residual / 255.0)
+        residual = (residual / 255.0 * (self.max - self.min) + self.min)
+
         curr_frame = predicted + residual
 
         return curr_frame, flow, likehihood_list
