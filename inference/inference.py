@@ -55,7 +55,7 @@ def get_video_info(video_path):
     return video_params, audio_params
 
 
-def video_inference_sf_rgb(opt):
+def video_inference_sfx2_rgb(opt):
     input_video_list = sorted(glob.glob(opt.input_video))
     for input_video in input_video_list:
         cap = cv2.VideoCapture(input_video)
@@ -153,7 +153,7 @@ def video_inference_sf_rgb(opt):
         log.logger.info('=========================================\n')
 
 
-def video_inference_sf_yuv420(opt):
+def video_inference_sfx2_yuv420(opt):
     input_video_list = sorted(glob.glob(opt.input_video))
     for input_video in input_video_list:
         cap = cv2.VideoCapture(input_video)
@@ -255,7 +255,7 @@ def video_inference_sf_yuv420(opt):
         log.logger.info('=========================================\n')
 
 
-def video_inference_sf_yuv(opt):
+def video_inference_sfx2_yuv(opt):
     input_video_list = sorted(glob.glob(opt.input_video))
     for input_video in input_video_list:
         cap = cv2.VideoCapture(input_video)
@@ -376,7 +376,124 @@ def video_inference_sf_yuv(opt):
         log.logger.info('=========================================\n')
 
 
-def video_inference_mf_rgb(opt):
+def video_inference_sf_yuv(opt):
+    input_video_list = sorted(glob.glob(opt.input_video))
+    for input_video in input_video_list:
+        cap = cv2.VideoCapture(input_video)
+        assert cap.isOpened(), \
+            '[{}] is a illegal input!'.format(input_video)
+
+        # get video info
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        bitrate = opt.bitrate
+        fps = '%.02f' % fps
+        video_name = path.basename(input_video).split('.')[0]
+        os.makedirs(opt.save_path, exist_ok=True)
+        save_file = path.join(opt.save_path, '{}.y4m'.format(video_name))
+        temp_file = path.join(opt.save_path, '{}_tmp.y4m'.format(video_name))
+
+        ## get video codec info by ffprobe
+        video_params, audio_params = get_video_info(input_video)
+
+        assert video_params['pix_fmt'] == 'yuv420p' or video_params['pix_fmt'] == 'yuv422p'
+
+        # use python-ffmpeg
+        reader = (ffmpeg
+                    .input(input_video)
+                    .output('pipe:', format='rawvideo', pix_fmt=video_params['pix_fmt'])
+                    .run_async(pipe_stdout=True))
+        writer = (ffmpeg
+                    .input('pipe:', format='rawvideo', pix_fmt=video_params['pix_fmt'], s='{}x{}'.format(w, h), r=fps)
+                    .output(temp_file)
+                    .overwrite_output()
+                    .run_async(pipe_stdin=True))
+
+        # init model
+
+        enhancer = SingleFrameEnhancer(model_opt_dict[opt.model_arch], opt.load_path, device=opt.device)
+
+        k = 0
+        t_sr = 0
+        t1 = time.time()
+        while True:
+            k += 1
+            if video_params['pix_fmt'] == 'yuv420p':
+                in_bytes_Y = reader.stdout.read(w * h)
+                in_bytes_U = reader.stdout.read(w // 2 * h // 2)
+                in_bytes_V = reader.stdout.read(w // 2 * h // 2)
+                if not in_bytes_Y:
+                    print('Finish reading video')
+                    break
+                Y = (np.frombuffer(in_bytes_Y, np.uint8).reshape([h, w]))
+                U = (np.frombuffer(in_bytes_U, np.uint8).reshape([h // 2, w // 2]))
+                V = (np.frombuffer(in_bytes_V, np.uint8).reshape([h // 2, w // 2]))
+
+                # inference on a frame
+                t_start = time.time()
+                Y = enhancer.forward_single(Y, format='y')
+            elif video_params['pix_fmt'] == 'yuv422p':
+                in_bytes_Y = reader.stdout.read(w * h)
+                in_bytes_U = reader.stdout.read(w // 2 * h)
+                in_bytes_V = reader.stdout.read(w // 2 * h)
+                if not in_bytes_Y:
+                    print('Finish reading video')
+                    break
+                Y = (np.frombuffer(in_bytes_Y, np.uint8).reshape([h, w]))
+                U = (np.frombuffer(in_bytes_U, np.uint8).reshape([h, w // 2]))
+                V = (np.frombuffer(in_bytes_V, np.uint8).reshape([h, w // 2]))
+
+                # inference on a frame
+                t_start = time.time()
+                Y = enhancer.forward_single(Y, format='y')
+            t_end = time.time()
+            t_sr += t_end - t_start
+
+            # write output to target video
+            writer.stdin.write(Y.tobytes())
+            writer.stdin.write(U.tobytes())
+            writer.stdin.write(V.tobytes())
+
+        reader.stdout.close()
+        writer.stdin.close()
+        writer.wait()
+        cap.release()
+
+        t2 = time.time()
+
+        # concat audio and video
+        if audio_params is not None:
+            log.logger.info('Concat video and audio')
+            input_ffmpeg = ffmpeg.input(input_video)
+            audio = input_ffmpeg['a']
+            output_ffmpeg = ffmpeg.input(temp_file)
+            video = output_ffmpeg['v']
+
+            if 'bit_rate' in audio_params.keys():
+                a_bitrate = audio_params['bit_rate']
+            else:
+                a_bitrate = '128k'
+
+            # rewrite video with audio
+            mov = (ffmpeg.output(video, audio, save_file, vcodec='copy', audio_bitrate=a_bitrate, acodec='aac'))
+            mov.overwrite_output().run()
+            os.system('rm -f {}'.format(temp_file))
+
+        else:
+            os.system('mv {} {}'.format(temp_file, save_file))
+
+        t3 = time.time()
+        log.logger.info('============= Elapsed time =============')
+        log.logger.info('>> Cost time: {:.2f}s'.format(t2 - t1))
+        log.logger.info('>> Avg. time of processing: {}ms/frame'.format(int((t2 - t1) / k * 1000)))
+        log.logger.info('>> Avg. time of inference : {}ms/frame'.format(int(t_sr / k * 1000)))
+        log.logger.info('>> Ext. time of concating audio : {:.2f}s'.format(t3 - t2))
+        log.logger.info('=========================================\n')
+
+
+def video_inference_mfx2_rgb(opt):
     input_video_list = sorted(glob.glob(opt.input_video))
     for input_video in input_video_list:
         cap = cv2.VideoCapture(input_video)
@@ -511,7 +628,7 @@ def video_inference_mf_rgb(opt):
         log.logger.info('=========================================\n')
 
 
-def video_inference_mf_yuv420(opt):
+def video_inference_mfx2_yuv420(opt):
     input_video_list = sorted(glob.glob(opt.input_video))
     for input_video in input_video_list:
         cap = cv2.VideoCapture(input_video)
@@ -543,6 +660,173 @@ def video_inference_mf_yuv420(opt):
         writer = (ffmpeg
                     .input('pipe:', format='rawvideo', pix_fmt='yuv420p', s='{}x{}'.format(w, h), r=fps)
                     .output(temp_file, vcodec='libx264', pix_fmt='yuv420p', video_bitrate=bitrate, r=fps)
+                    .overwrite_output()
+                    .run_async(pipe_stdin=True))
+
+        # init model
+        enhancer = MultiFrameEnhancer(model_opt_dict[opt.model_arch], opt.load_path, nframes=opt.nframes, device=opt.device)
+
+        k = 0
+        frame_buf = []
+        buf_count = 0
+
+        t_sr = 0
+        t1 = time.time()
+        while True:
+            k += 1
+            in_bytes_Y = reader.stdout.read(w * h)
+            in_bytes_U = reader.stdout.read(w // 2 * h // 2)
+            in_bytes_V = reader.stdout.read(w // 2 * h // 2)
+            if not in_bytes_Y:
+                print('Finish reading video')
+                break
+            Y = (np.frombuffer(in_bytes_Y, np.uint8).reshape([h, w]))
+            U = (np.frombuffer(in_bytes_U, np.uint8).reshape([h // 2, w // 2]))
+            V = (np.frombuffer(in_bytes_V, np.uint8).reshape([h // 2, w // 2]))
+            YUV = np.zeros((h, w, 3), dtype=np.uint8)
+            # Y channel
+            YUV[:, :, 0] = Y
+            # U channel
+            YUV[0::2, 0::2, 1] = U
+            YUV[0::2, 1::2, 1] = U
+            YUV[1::2, 0::2, 1] = U
+            YUV[1::2, 1::2, 1] = U
+            # V channel
+            YUV[0::2, 0::2, 2] = V
+            YUV[0::2, 1::2, 2] = V
+            YUV[1::2, 0::2, 2] = V
+            YUV[1::2, 1::2, 2] = V
+            # frame = YUV / 255.
+            frame = YUV
+            frame_buf.append(frame)
+            enhancer.sequence_input_pool(frame)
+
+            if len(frame_buf) < opt.frame_buf_len:
+                continue
+            else:
+                ## shot det
+                scene_list = shot_det(frame_buf)
+
+                # inference on a seqnence
+                for frame_idx in range(opt.frame_buf_len):
+                    t_start = time.time()
+                    select_idx = generate_frame_indices_with_scene(frame_idx, opt.frame_buf_len,
+                                                                   opt.nframes, scene_list, padding='replicate')
+                    out = enhancer.forward_sequence(select_idx)
+                    t_end = time.time()
+                    t_sr += t_end - t_start
+
+                    # write output to target video
+                    out = out.astype(np.float32)
+                    Y = out[:, :, 0]
+                    U = (out[0::2, 0::2, 1] + out[0::2, 1::2, 1] + out[1::2, 0::2, 1] + out[1::2, 1::2, 1]) / 4
+                    V = (out[0::2, 0::2, 2] + out[0::2, 1::2, 2] + out[1::2, 0::2, 2] + out[1::2, 1::2, 2]) / 4
+                    Y, U, V = Y.astype(np.uint8), U.astype(np.uint8), V.astype(np.uint8)
+                    writer.stdin.write(Y.tobytes())
+                    writer.stdin.write(U.tobytes())
+                    writer.stdin.write(V.tobytes())
+
+                # clear buf
+                buf_count += 1
+                frame_buf.clear()
+                enhancer.clear_input_cache()
+
+        if len(frame_buf) > 0:
+            ## shot det
+            scene_list = shot_det(frame_buf)
+
+            # inference on a seqnence
+            for frame_idx in range(len(frame_buf)):
+                t_start = time.time()
+                select_idx = generate_frame_indices_with_scene(frame_idx, len(frame_buf), opt.nframes,
+                                                               scene_list, padding='replicate')
+                out = enhancer.forward_sequence(select_idx)
+                t_end = time.time()
+                t_sr += t_end - t_start
+
+                # write output to target video
+                out = out.astype(np.float32)
+                Y = out[:, :, 0]
+                U = (out[0::2, 0::2, 1] + out[0::2, 1::2, 1] + out[1::2, 0::2, 1] + out[1::2, 1::2, 1]) / 4
+                V = (out[0::2, 0::2, 2] + out[0::2, 1::2, 2] + out[1::2, 0::2, 2] + out[1::2, 1::2, 2]) / 4
+                Y, U, V = Y.astype(np.uint8), U.astype(np.uint8), V.astype(np.uint8)
+                writer.stdin.write(Y.tobytes())
+                writer.stdin.write(U.tobytes())
+                writer.stdin.write(V.tobytes())
+
+            # clear buf
+            buf_count += 1
+            frame_buf.clear()
+            enhancer.clear_input_cache()
+
+        reader.stdout.close()
+        writer.stdin.close()
+        writer.wait()
+
+        t2 = time.time()
+
+        # concat audio and video
+        if audio_params is not None:
+            log.logger.info('Concat video and audio')
+            input_ffmpeg = ffmpeg.input(input_video)
+            audio = input_ffmpeg['a']
+            output_ffmpeg = ffmpeg.input(temp_file)
+            video = output_ffmpeg['v']
+
+            if 'bit_rate' in audio_params.keys():
+                a_bitrate = audio_params['bit_rate']
+            else:
+                a_bitrate = '128k'
+
+            # rewrite video with audio
+            mov = (ffmpeg.output(video, audio, save_file, vcodec='copy', audio_bitrate=a_bitrate, acodec='aac'))
+            mov.overwrite_output().run()
+            os.system('rm -f {}'.format(temp_file))
+
+        else:
+            os.system('mv {} {}'.format(temp_file, save_file))
+
+        t3 = time.time()
+        log.logger.info('============= Elapsed time =============')
+        log.logger.info('>> Cost time: {:.2f}s'.format(t2 - t1))
+        log.logger.info('>> Avg. time of processing: {}ms/frame'.format(int((t2-t1)/k*1000)))
+        log.logger.info('>> Avg. time of inference : {}ms/frame'.format(int(t_sr/k*1000)))
+        log.logger.info('>> Ext. time of concating audio : {:.2f}s'.format(t3-t2))
+        log.logger.info('=========================================\n')
+
+
+def video_inference_mfx2_yuv(opt):
+    input_video_list = sorted(glob.glob(opt.input_video))
+    for input_video in input_video_list:
+        cap = cv2.VideoCapture(input_video)
+        assert cap.isOpened(), \
+            '[{}] is a illegal input!'.format(input_video)
+
+        # get video info
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        bitrate = opt.bitrate
+        fps = '%.02f' % fps
+        video_name = path.basename(input_video).split('.')[0]
+        os.makedirs(opt.save_path, exist_ok=True)
+        save_file = path.join(opt.save_path, '{}.mp4'.format(video_name))
+        temp_file = path.join(opt.save_path, '{}_tmp.mp4'.format(video_name))
+
+        cap.release()
+
+        ## get video codec info by ffprobe
+        video_params, audio_params = get_video_info(input_video)
+
+        # use python-ffmpeg
+        reader = (ffmpeg
+                    .input(input_video)
+                    .output('pipe:', format='rawvideo', pix_fmt=video_params['pix_fmt'])
+                    .run_async(pipe_stdout=True))
+        writer = (ffmpeg
+                    .input('pipe:', format='rawvideo', pix_fmt=video_params['pix_fmt'], s='{}x{}'.format(w, h), r=fps)
+                    .output(temp_file, vcodec='libx264', pix_fmt=video_params['pix_fmt'], video_bitrate=bitrate, r=fps)
                     .overwrite_output()
                     .run_async(pipe_stdin=True))
 
@@ -849,21 +1133,23 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Video Restoration')
     parser.add_argument('--input_video',
-                        default='/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/360P-Y4M/*')
+                        default='/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-Y4M/*')
     parser.add_argument('--save_path',
                         default='/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/'
-                                '360P-Y4M-SR-MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_sr1.0_cp1.0_rate0.01_mix')
+                                '720P-Y4M-PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.005_mix')
     parser.add_argument('--model_arch', type=str,
-                        default='MSRResNet_Y')
+                        default='PrecodingResNet')
     parser.add_argument('--load_path',
                         default='../experiments/pretrained_models/'
-                                'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_sr1.0_cp1.0_rate0.01_mix.pth')
+                                'PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.001_mix.pth')
     parser.add_argument('--device', type=str,
                         default='cuda:0')
     parser.add_argument('--mode', type=str,
                         default='yuv')
     parser.add_argument('--bitrate', type=str,
                         default='10M')
+    parser.add_argument('--scale', type=int,
+                        default=1)
     parser.add_argument('--nframes', type=int,
                         default=1)
     parser.add_argument('--frame_buf_len', type=int,
@@ -879,18 +1165,34 @@ if __name__ == '__main__':
         'MSRResNet_Y':
             {'type': 'MSRResNet', 'num_feat': 64, 'num_block': 16, 'num_in_ch': 1, 'num_out_ch': 1, 'upscale': 2},
         'MSRResNet':
-            {'type': 'MSRResNet', 'num_feat': 64, 'num_block': 16, 'num_in_ch': 3, 'num_out_ch': 3, 'upscale': 2}
+            {'type': 'MSRResNet', 'num_feat': 64, 'num_block': 16, 'num_in_ch': 3, 'num_out_ch': 3, 'upscale': 2},
+        'PrecodingResNet':
+            {'type': 'PrecodingResNet', 'num_in_ch': 1, 'num_out_ch': 1, 'num_feat': 64}
     }
 
-    if opt.nframes == 1:
-        print('process on single-frames mode')
-        if opt.mode == 'rgb':
-            video_inference_sf_rgb(opt)
+    if opt.scale == 1:
+        if opt.nframes == 1:
+            print('process on single-frames mode')
+            if opt.mode == 'rgb':
+                video_inference_sf_rgb(opt)
+            else:
+                video_inference_sf_yuv(opt)
         else:
-            video_inference_sf_yuv(opt)
+            print('process on multi-frames mode')
+            if opt.mode == 'rgb':
+                video_inference_mf_rgb(opt)
+            else:
+                video_inference_mf_yuv(opt)
     else:
-        print('process on multi-frames mode')
-        if opt.mode == 'rgb':
-            video_inference_mf_rgb(opt)
+        if opt.nframes == 1:
+            print('process on single-frames mode')
+            if opt.mode == 'rgb':
+                video_inference_sfx2_rgb(opt)
+            else:
+                video_inference_sfx2_yuv(opt)
         else:
-            video_inference_mf_yuv(opt)
+            print('process on multi-frames mode')
+            if opt.mode == 'rgb':
+                video_inference_mfx2_rgb(opt)
+            else:
+                video_inference_mfx2_yuv(opt)
