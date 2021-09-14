@@ -1,12 +1,14 @@
 import random
 import torch
 import numpy as np
+import decord as de
 from pathlib import Path
 from torch.utils import data as data
 
 from basicsr.data.transforms import augment, paired_random_crop
 from basicsr.utils import FileClient, get_root_logger, imfrombytes, img2tensor
 from basicsr.utils.registry import DATASET_REGISTRY
+from basicsr.utils.matlab_functions import bgr2ycbcr, ycbcr2bgr, rgb2ycbcr, ycbcr2rgb
 
 
 @DATASET_REGISTRY.register()
@@ -989,6 +991,104 @@ class Vimeo90KDoubleFrameValidDataset(data.Dataset):
         # img_gts: (t, c, h, w)
         # key: str
         return {'lq': img_lqs, 'gt': img_gts, 'key': key, 'frame_list': self.neighbor_list}
+
+    def __len__(self):
+        return len(self.keys)
+
+
+@DATASET_REGISTRY.register()
+class Vimeo90KSingleFrameTrainVideoDataset(data.Dataset):
+
+    def __init__(self, opt):
+        super(Vimeo90KSingleFrameTrainVideoDataset, self).__init__()
+        self.opt = opt
+        self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(opt['dataroot_lq'])
+
+        with open(opt['meta_info_file'], 'r') as fin:
+            self.keys = [line.split(' ')[0] for line in fin]
+
+    def __getitem__(self, index):
+
+        scale = self.opt['scale']
+        gt_size = self.opt['gt_size']
+        key = self.keys[index]
+        clip, seq = key.split('/')  # key example: 00001/0001
+
+        # get the center GT frame (im4)
+        seq_gt_path = self.gt_root / clip / '{}.mp4'.format(seq)
+        with open(str(seq_gt_path), 'rb') as f_gt:
+            vr_gt = de.VideoReader(f_gt)
+        img_gt = vr_gt[len(vr_gt)//2].asnumpy().astype(np.float32) / 255.
+        if self.opt['color'] == 'y':
+            img_gt = np.expand_dims(rgb2ycbcr(img_gt, y_only=True), axis=-1)
+
+        # get the center LQ frame (im4)
+        seq_lq_path = self.lq_root / clip / '{}.mp4'.format(seq)
+        with open(str(seq_lq_path), 'rb') as f_lq:
+            vr_lq = de.VideoReader(f_lq)
+        img_lq = vr_lq[len(vr_lq)//2].asnumpy().astype(np.float32) / 255.
+        if self.opt['color'] == 'y':
+            img_lq = np.expand_dims(rgb2ycbcr(img_lq, y_only=True), axis=-1)
+
+        # randomly crop
+        img_gt, img_lq = paired_random_crop(img_gt, img_lq, gt_size, scale, str(seq_gt_path))
+
+        # augmentation - flip, rotate
+        img_results = augment([img_lq, img_gt], self.opt['use_flip'], self.opt['use_rot'])
+
+        img_results = img2tensor(img_results, bgr2rgb=False)
+        img_lq = img_results[0]
+        img_gt = img_results[1]
+
+        # img_lq: (c, h, w)
+        # img_gt: (c, h, w)
+        # key: str
+        return {'lq': img_lq, 'gt': img_gt, 'key': key}
+
+    def __len__(self):
+        return len(self.keys)
+
+
+@DATASET_REGISTRY.register()
+class Vimeo90KSingleFrameValidVideoDataset(data.Dataset):
+
+    def __init__(self, opt):
+        super(Vimeo90KSingleFrameValidVideoDataset, self).__init__()
+        self.opt = opt
+        self.gt_root, self.lq_root = Path(opt['dataroot_gt']), Path(opt['dataroot_lq'])
+
+        with open(opt['meta_info_file'], 'r') as fin:
+            self.keys = [line.split(' ')[0] for line in fin]
+
+    def __getitem__(self, index):
+
+        key = self.keys[index]
+        clip, seq = key.split('/')  # key example: 00001/0001
+
+        # get the center GT frame (im4)
+        seq_gt_path = self.gt_root / clip / '{}.mp4'.format(seq)
+        with open(str(seq_gt_path), 'rb') as f_gt:
+            vr_gt = de.VideoReader(f_gt)
+        img_gt = vr_gt[len(vr_gt)//2].asnumpy().astype(np.float32) / 255.
+        if self.opt['color'] == 'y':
+            img_gt = np.expand_dims(rgb2ycbcr(img_gt, y_only=True), axis=-1)
+
+        # get the center LQ frame (im4)
+        seq_lq_path = self.lq_root / clip / '{}.mp4'.format(seq)
+        with open(str(seq_lq_path), 'rb') as f_lq:
+            vr_lq = de.VideoReader(f_lq)
+        img_lq = vr_lq[len(vr_lq)//2].asnumpy().astype(np.float32) / 255.
+        if self.opt['color'] == 'y':
+            img_lq = np.expand_dims(rgb2ycbcr(img_lq, y_only=True), axis=-1)
+
+        img_results = img2tensor([img_lq, img_gt], bgr2rgb=False)
+        img_lq = img_results[0]
+        img_gt = img_results[1]
+
+        # img_lq: (c, h, w)
+        # img_gt: (c, h, w)
+        # key: str
+        return {'lq': img_lq, 'gt': img_gt, 'key': key}
 
     def __len__(self):
         return len(self.keys)
