@@ -185,8 +185,36 @@ def evaluate(model, crf_list):
 if __name__ == '__main__':
 
     # model = 'MSRResNet_x2_Vimeo90k_250k_Y'
+    # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_1.0_1.0_mix'
     # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_0.1_1.0_mix'
-    model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_ratio_1.0_1.0_mix'
+    # model = 'MSRResNet_DoubleFrameCompressor_x2_Vimeo90k_250k_Y_sr1.0_cp1.0_rate0.01_mix'
+
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_crf18'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_crf22'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_crf26'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_crf30'
+
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf18'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf22'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf26'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf30'
+
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf18_V2'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf22_V2'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf26_V2'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf30_V2'
+
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR1.0_CP1.0_L1_crf18'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR1.0_CP1.0_L1_crf22'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR1.0_CP1.0_L1_crf26'
+    # model = 'MSRResNet_EncoderDecoder_x2_Vimeo90k_150k_LossRatio_SR1.0_CP1.0_L1_crf30'
+
+    # model = 'Baseline'
+    # model = 'PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.001_mix'
+    # model = 'PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.005_mix'
+    # model = 'PrecodingResNet_DoubleFrameCompressor_Vimeo90k_250k_Y_Lf1.0_Lr0.010_mix'
+    # model = 'MSRResNet_EncoderDecoder_Y_x2_Vimeo90k_150k_LossRatio_SR0.1_CP1.0_L1_crf18'
+    model = 'MSRResNet_EncoderDecoder_Y_x2_Vimeo90k_150k_LossRatio_SR1.0_CP1.0_L1_crf18'
 
     crf_list = [18, 22, 26, 30, 34, 38, 42]
 
@@ -199,12 +227,12 @@ if __name__ == '__main__':
         gt_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-original/720P-MP4'
         lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
         psnr, ssim, vmaf = calculate_metrics(gt_video_root, lq_video_root, logger)
-        psnr_list.append(psnr)
-        ssim_list.append(ssim)
-        vmaf_list.append(vmaf)
-    print('PSNR list: ', psnr_list)
-    print('SSIM list: ', ssim_list)
-    print('VMAF list: ', vmaf_list)
+        psnr_list.append('{:.2f}'.format(psnr))
+        ssim_list.append('{:.4f}'.format(ssim))
+        vmaf_list.append('{:.2f}'.format(vmaf))
+    logger.info('PSNR list: {}'.format(psnr_list))
+    logger.info('SSIM list: {}'.format(ssim_list))
+    logger.info('VMAF list: {}'.format(vmaf_list))
 
     # bitrate
     log_path = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/results/bitrate/{}.log'.format(model)
@@ -214,5 +242,5 @@ if __name__ == '__main__':
     for crf in crf_list:
         lq_video_root = '/home/xiyang/data0/datasets/ReCp/MCL-JVC/videos-compress/{}/CRF{}'.format(model, crf)
         kbps = get_bitrate(lq_video_root, logger)
-        kbps_list.append(kbps)
-    print('kbps list: ', kbps_list)
+        kbps_list.append('{:.2f}'.format(kbps))
+    logger.info('kbps list: {}'.format(kbps_list))
