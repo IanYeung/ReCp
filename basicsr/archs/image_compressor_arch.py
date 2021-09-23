@@ -200,7 +200,7 @@ class SingleFrameCompressor(CompressionModel):
         for i in range(self.block_size * self.block_size):
             setattr(self, 'entropy_bottleneck_{:02d}'.format(i), EntropyBottleneck(num_ch))
 
-    def forward(self, ori_images, qp, training=False, beta=100, debug=False):
+    def forward(self, curr_frame, qp, training=False, beta=100, debug=False):
         if self.color == 'RGB':
             pred_frame, _ = Prediction.intra_prediction_ste_rgb(ori_images, ori_images,
                                                                 search_size=self.search_size,
