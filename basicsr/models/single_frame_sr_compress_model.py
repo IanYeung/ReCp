@@ -735,9 +735,16 @@ class DoubleFrameSRMultiQPModel(BaseModel):
         self.prev_frame_sr = self.net_sr(self.prev_frame_lq)
         self.curr_frame_sr = self.net_sr(self.curr_frame_lq)
 
-        mode = 'intra' if current_iter % 150 == 0 else 'inter'
-        self.curr_frame_cp, self.flow, self.likehihoods = \
-            self.net_cp(self.curr_frame_sr, self.prev_frame_sr, qp=random.randint(15, 30), training=True, mode=mode)
+        if current_iter % 100 == 0:
+            mode = 'intra'
+        else:
+            mode = 'inter'
+        min_qp = self.opt['train']['min_qp']
+        max_qp = self.opt['train']['max_qp']
+        qp = random.randint(min_qp, max_qp)
+        self.curr_frame_cp, self.flow, self.likehihoods = self.net_cp(self.curr_frame_sr, self.prev_frame_sr,
+                                                                      qp=qp, training=True, mode=mode,
+                                                                      beta=100, debug=False)
 
         l_total = 0
         loss_dict = OrderedDict()
@@ -774,7 +781,6 @@ class DoubleFrameSRMultiQPModel(BaseModel):
             l_bpp = 0
             for i in range(len(self.likehihoods)):
                 l_bpp += self.cri_bpp(self.likehihoods[i], num_pixels)
-            # l_bpp = self.cri_bpp(self.likehihoods, num_pixels)
             loss_dict['l_bpp'] = l_bpp
             l_total += l_bpp
 
@@ -800,7 +806,7 @@ class DoubleFrameSRMultiQPModel(BaseModel):
             self.curr_frame_sr = self.net_sr(self.curr_frame_lq)
 
             self.curr_frame_cp, _, _ = \
-                self.get_bare_model(self.net_cp)(self.curr_frame_sr, self.prev_frame_sr, qp=20, training=False)
+                self.get_bare_model(self.net_cp)(self.curr_frame_sr, self.prev_frame_sr, qp=0, training=False)
         self.net_sr.train()
         self.net_cp.train()
 
