@@ -1,11 +1,11 @@
 import cv2
+import flow_vis
 import numpy as np
 import matplotlib.pyplot as plt
 
 import torch
 
 from basicsr.archs import build_network
-from basicsr.archs.arch_util import Prediction
 from basicsr.utils.matlab_functions import bgr2ycbcr, ycbcr2bgr
 
 
@@ -57,8 +57,20 @@ def get_condunet():
     return net
 
 
-def get_compressor():
-    opt = {'type': 'FrameCompressor', 'num_ch': 1, 'block_size': 4}
+def get_precoding_network():
+    opt = {'type': 'PrecodingResNet', 'num_in_ch': 1, 'num_out_ch': 1, 'num_feat': 64}
+    net = build_network(opt)
+    return net
+
+
+def get_singleframecompressor():
+    opt = {'type': 'SingleFrameCompressor', 'num_ch': 1, 'search_size': 21, 'block_size': 4, 'color': 'Y'}
+    net = build_network(opt)
+    return net
+
+
+def get_doubleframecompressor():
+    opt = {'type': 'DoubleFrameCompressor', 'num_ch': 1, 'search_size': 21, 'block_size': 4, 'color': 'Y'}
     net = build_network(opt)
     return net
 
@@ -67,16 +79,14 @@ if __name__ == '__main__':
 
     device = torch.device('cpu')
 
-    # inp = torch.randn(1, 3, 128, 224).to(device)
-    # # inp = torch.randn(1, 7, 3, 128, 224).to(device)
-    # net = get_condunet().to(device)
-    # out = net((inp, inp))
+    # net = get_precoding_network().to(device)
+    # inp = torch.randn(1, 1, 128, 128)
+    # out = net(inp)
     # print(out.shape)
 
     # net = get_compressor().to(device)
     #
-    # block_size = 4
-    # img = cv2.imread('/home/xiyang/Downloads/0100/im1.png')
+    # img = cv2.imread('data/im2.png')
     # ori_img = bgr2ycbcr(img, y_only=True)  # [H, W]
     # plt.imshow(ori_img, cmap='gray')
     # plt.title('Original Image')
@@ -96,45 +106,93 @@ if __name__ == '__main__':
     # plt.title('Difference Image')
     # plt.show()
 
-    # net = get_compressor().to(device)
+
+    # net = get_singleframecompressor().to(device)
     #
-    # block_size = 4
-    # ori_img = cv2.imread('/home/xiyang/Downloads/0100/im1.png')[:, :, [2, 1, 0]]
+    # ori_img = cv2.imread('data/im2.png')[:, :, [2, 1, 0]] / 255.
     # plt.imshow(ori_img)
     # plt.title('Original Image')
     # plt.show()
     #
     # ori_images = torch.from_numpy(ori_img).permute(2, 0, 1).unsqueeze(dim=0).float()  # [B, 3, H, W]
     #
-    # com_images, likelihoods = net(ori_images, qp=30)  # [B, 3, H, W]
+    # com_images, likelihoods = net(ori_images, qp=30, training=False)  # [B, 3, H, W]
     #
-    # com_img = (com_images.detach().squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8)  # [H, W, 3]
+    # com_img = ((torch.clip(com_images, 0, 1) * 255.).detach().squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8)  # [H, W, 3]
     # plt.imshow(com_img)
     # plt.title('Compressed Image')
     # plt.show()
 
-    im1 = cv2.imread(filename='data/im1.png', flags=cv2.IMREAD_UNCHANGED) / 255.
-    im2 = cv2.imread(filename='data/im2.png', flags=cv2.IMREAD_UNCHANGED) / 255.
 
-    im1 = bgr2ycbcr(im1.astype(np.float32), y_only=True)
-    im2 = bgr2ycbcr(im2.astype(np.float32), y_only=True)
+    # net = get_doubleframecompressor().to(device)
+    #
+    # ori_img_1 = cv2.imread('data/im1.png')[:, :, [2, 1, 0]] / 255.
+    # plt.imshow(ori_img_1)
+    # plt.title('Original Image 1')
+    # plt.show()
+    #
+    # ori_img_2 = cv2.imread('data/im2.png')[:, :, [2, 1, 0]] / 255.
+    # plt.imshow(ori_img_2)
+    # plt.title('Original Image 2')
+    # plt.show()
+    #
+    # ori_images_1 = torch.from_numpy(ori_img_1).permute(2, 0, 1).unsqueeze(dim=0).float()  # [B, 3, H, W]
+    # ori_images_2 = torch.from_numpy(ori_img_2).permute(2, 0, 1).unsqueeze(dim=0).float()  # [B, 3, H, W]
+    #
+    # com_images_2, flow, likelihoods = net(ori_images_2, ori_images_1, qp=40, training=False)  # [B, 3, H, W]
+    #
+    # com_img_2 = ((torch.clip(com_images_2, 0, 1) * 255.).detach().squeeze(dim=0).permute(1, 2, 0).numpy()).round().astype(np.uint8)  # [H, W, 3]
+    # plt.imshow(com_img_2)
+    # plt.title('Compressed Image 2')
+    # plt.show()
+    #
+    # flow = flow.squeeze(0).cpu().numpy()
+    # flow_color = flow_vis.flow_to_color(flow, convert_to_bgr=False)
+    # plt.imshow(flow_color)
+    # plt.show()
 
-    im1_tensor = torch.from_numpy(im1).unsqueeze(0).unsqueeze(0).to(device)
-    im2_tensor = torch.from_numpy(im2).unsqueeze(0).unsqueeze(0).to(device)
 
-    predict = Prediction(search_size=21, block_size=4).to(device)
-    # out_tensor = predict(im1_tensor, im2_tensor, mode='intra', soft=True)
-    out_tensor = predict(im1_tensor, im2_tensor, mode='inter', soft=True)
-    # out_tensor = Prediction.intra_prediction(im1_tensor, im2_tensor, search_size=21, block_size=4, soft=False)
-    # out_tensor = Prediction.inter_prediction(im1_tensor, im2_tensor, search_size=21, block_size=4, soft=False)
-    out = out_tensor.squeeze(0).squeeze(0).cpu().numpy()
+    net = get_doubleframecompressor().to(device)
 
-    plt.imshow(out, cmap='gray')
+    ori_img_1 = cv2.imread('data/im1.png') / 255.
+    ori_img_1 = bgr2ycbcr(ori_img_1.astype(np.float32), y_only=True)
+    plt.imshow(ori_img_1, cmap='gray')
+    plt.title('Original Image 1')
     plt.show()
 
-    plt.imshow(im1, cmap='gray')
+    ori_img_2 = cv2.imread('data/im2.png') / 255.
+    ori_img_2 = bgr2ycbcr(ori_img_2.astype(np.float32), y_only=True)
+    plt.imshow(ori_img_2, cmap='gray')
+    plt.title('Original Image 2')
     plt.show()
 
-    res = im1 - out
-    plt.imshow(np.abs(res), cmap='gray')
+    ori_images_1 = torch.from_numpy(ori_img_1).unsqueeze(dim=0).unsqueeze(dim=0).float()  # [B, 1, H, W]
+    ori_images_2 = torch.from_numpy(ori_img_2).unsqueeze(dim=0).unsqueeze(dim=0).float()  # [B, 1, H, W]
+
+    com_images_2, flow, likelihoods, ori_res, com_res = \
+        net(ori_images_2, ori_images_1, qp=30, training=False, beta=500)  # [B, 1, H, W]
+
+    com_img_2 = ((torch.clip(com_images_2, 0, 1) * 255.).detach().squeeze().numpy()).round().astype(np.uint8)  # [H, W, 1]
+    plt.imshow(com_img_2, cmap='gray')
+    plt.title('Compressed Image 2')
+    plt.show()
+
+    # flow = flow.squeeze(0).cpu().numpy()
+    # flow_color = flow_vis.flow_to_color(flow, convert_to_bgr=False)
+    # plt.imshow(flow_color)
+    # plt.show()
+
+    ori_res_img = ori_res.detach().squeeze().numpy().round().astype(np.uint8)
+    plt.imshow(ori_res_img, cmap='gray')
+    plt.title('Original Residual Image')
+    plt.show()
+
+    com_res_img = com_res.detach().squeeze().numpy().round().astype(np.uint8)
+    plt.imshow(com_res_img, cmap='gray')
+    plt.title('Compressed Residual Image')
+    plt.show()
+
+    diff_img = (ori_res - com_res).detach().squeeze().numpy().round().astype(np.uint8)
+    plt.imshow(np.abs(diff_img), cmap='gray')
+    plt.title('Compressed Residual Image')
     plt.show()
