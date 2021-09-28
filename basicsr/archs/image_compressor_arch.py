@@ -202,12 +202,12 @@ class SingleFrameCompressor(CompressionModel):
 
     def forward(self, curr_frame, qp, training=False, beta=100, debug=False):
         if self.color == 'RGB':
-            pred_frame, _ = Prediction.intra_prediction_ste_rgb(ori_images, ori_images,
+            pred_frame, _ = Prediction.intra_prediction_ste_rgb(curr_frame, curr_frame,
                                                                 search_size=self.search_size,
                                                                 block_size=self.block_size,
                                                                 beta=beta)
         else:
-            pred_frame, _ = Prediction.intra_prediction_ste_y(ori_images, ori_images,
+            pred_frame, _ = Prediction.intra_prediction_ste_y(curr_frame, curr_frame,
                                                               search_size=self.search_size,
                                                               block_size=self.block_size,
                                                               beta=beta)
@@ -408,13 +408,13 @@ class DoubleFrameCompressor(CompressionModel):
 
         inp_subband_list = self._extract_subband(Y_h, H, W)
 
-        out_subband_list , likehihood_list = list(map(torch.round, inp_subband_list)), None
-        # out_subband_list, likehihood_list = [], []
-        # for i in range(self.block_size * self.block_size):
-        #     subband, likelihood = \
-        #         getattr(self, 'entropy_bottleneck_{:02d}'.format(i))(inp_subband_list[i], training=training)
-        #     out_subband_list.append(subband)
-        #     likehihood_list.append(likelihood)
+        # out_subband_list , likehihood_list = list(map(torch.round, inp_subband_list)), None
+        out_subband_list, likehihood_list = [], []
+        for i in range(self.block_size * self.block_size):
+            subband, likelihood = \
+                getattr(self, 'entropy_bottleneck_{:02d}'.format(i))(inp_subband_list[i], training=training)
+            out_subband_list.append(subband)
+            likehihood_list.append(likelihood)
 
         Y_h = self._combine_subband(out_subband_list)
 
